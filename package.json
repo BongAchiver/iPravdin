@@ -1,13 +1,12 @@
 {
   "name": "ipravdin-firefox",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.cjs",
     "lint": "addons-linter app --self-hosted --warnings-as-errors",
     "build": "node scripts/build.cjs",
     "test:firefox": "node tests/firefox.cjs",
-    "test:firefox:schedule": "node tests/firefox-schedule.cjs",
     "version:set": "node scripts/version.cjs",
     "updates:configure": "node scripts/configure-updates.cjs",
     "sign": "web-ext sign --source-dir app --artifacts-dir dist/signed --channel unlisted --no-input",

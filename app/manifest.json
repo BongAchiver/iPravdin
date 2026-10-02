@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "iPravdin",
-  "description": "Правдин в интернете и персональное расписание ИТМО через ваш аккаунт my.itmo. Без аналитики и серверов разработчика.",
-  "version": "2.2.0",
+  "description": "Заменяет изображения в интернете фотографиями Правдина. Локальные фотографии, настройки и исключения для сайтов. Без аналитики.",
+  "version": "2.3.0",
   "icons": {
     "16": "ipravdin/logo.svg",
     "48": "ipravdin/logo.svg",
@@ -10,10 +10,7 @@
   },
   "permissions": [
     "storage",
-    "contextMenus",
-    "webRequest",
-    "webRequestBlocking",
-    "alarms"
+    "contextMenus"
   ],
   "host_permissions": [
     "http://*/*",
@@ -22,9 +19,7 @@
   "background": {
     "scripts": [
       "ipravdin/settings.js",
-      "ipravdin/bg.js",
-      "ipravdin/schedule.js",
-      "ipravdin/itmo-client.js"
+      "ipravdin/bg.js"
     ]
   },
   "action": {
@@ -62,7 +57,7 @@
     "open_in_tab": true
   },
   "content_security_policy": {
-    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; connect-src https://my.itmo.ru https://id.itmo.ru; base-uri 'none'; form-action 'none'"
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"
   },
   "browser_specific_settings": {
     "gecko": {
@@ -70,7 +65,7 @@
       "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": [
-          "authenticationInfo"
+          "none"
         ]
       },
       "update_url": "https://github.com/BongAchiver/iPravdin/releases/latest/download/updates.json"

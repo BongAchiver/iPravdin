@@ -13,7 +13,12 @@ function refresh() {
   }).catch(error => console.error('iPravdin: settings update failed', error));
 }
 browser.storage.onChanged.addListener((_, area) => { if (area === 'local') refresh(); });
-browser.runtime.onInstalled.addListener(refresh);
+browser.runtime.onInstalled.addListener(async () => {
+  // Remove local credentials and cached data left by the retired schedule feature.
+  await browser.storage.local.remove(['itmoSession', 'itmoCache', 'itmoAuthError']);
+  await browser.storage.session.remove('itmoAuthPending');
+  refresh();
+});
 browser.runtime.onStartup.addListener(refresh);
 browser.contextMenus.onClicked.addListener(async info => {
   try {

@@ -1,19 +1,8 @@
 <!doctype html>
 <html lang="ru">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>iPravdin</title><link rel="stylesheet" href="options.css"><link rel="stylesheet" href="schedule.css"><script src="../settings.js" defer></script><script src="options.js" defer></script><script src="../schedule.js" defer></script><script src="schedule-ui.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>iPravdin</title><link rel="stylesheet" href="options.css"><script src="../settings.js" defer></script><script src="options.js" defer></script></head>
 <body class="popup"><main>
   <header class="header"><span class="brand"><span class="brand-icon" aria-hidden="true">п.</span> iPravdin</span><span class="edition">Firefox</span></header>
-  <section class="schedule" aria-labelledby="scheduleTitle">
-    <div class="schedule-heading"><h1 id="scheduleTitle">Моё расписание</h1><button id="scheduleRefresh" type="button" aria-label="Обновить расписание">↻</button></div>
-    <p id="scheduleAccount" class="schedule-account">Вход через ваш аккаунт ITMO ID</p>
-    <div class="schedule-nav"><button id="schedulePrev" type="button" aria-label="Предыдущий день">‹</button><label><span class="sr-only">Дата расписания</span><input id="scheduleDate" type="date"></label><button id="scheduleNext" type="button" aria-label="Следующий день">›</button><button id="scheduleToday" type="button">Сегодня</button></div>
-    <p id="scheduleStatus" class="schedule-status" role="status" aria-live="polite">Загружаем расписание…</p>
-    <p id="scheduleNearest" class="schedule-nearest" hidden></p>
-    <ol id="scheduleLessons" class="schedule-lessons"></ol>
-    <button id="scheduleConnect" class="full-button" type="button">Войти через ITMO ID ↗</button>
-    <button id="scheduleLogout" class="schedule-logout" type="button" hidden>Выйти и удалить сохранённое расписание</button>
-    <p class="schedule-help">Войдите один раз — вкладка my.itmo не нужна. Сессия и расписание хранятся только в вашем Firefox. Время пар — московское.</p>
-  </section>
   <div class="popup-portrait"><img src="../photos/portrait.jpg" alt="Правдин"><span>Добавим немного<br><em>Правдина?</em></span></div>
   <label class="setting"><span><strong>Режим Правдина</strong><small id="heroStatus">Загружаем…</small></span><input id="activate" class="toggle" type="checkbox" role="switch" disabled></label>
   <button id="openOptions" class="full-button" type="button">Все настройки <span aria-hidden="true">↗</span></button>
