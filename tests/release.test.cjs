@@ -6,6 +6,23 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const scripts = path.resolve('scripts');
+const { resolveVersion } = require('../scripts/release-version.cjs');
+
+test('push releases generate increasing versions without modifying the source version', () => {
+  assert.equal(resolveVersion({ source: '2.1.0', latest: '2.1.0', runNumber: 4 }), '2.1.0.4');
+  assert.equal(resolveVersion({ source: '2.1.0', latest: '2.1.0.4', runNumber: 5 }), '2.1.0.5');
+  assert.equal(resolveVersion({ source: '2.1.0', latest: '2.2.0', runNumber: 6 }), '2.2.0.6');
+  assert.equal(resolveVersion({ source: '2.3.0', latest: '2.2.0.6', runNumber: 7 }), '2.3.0.7');
+  assert.equal(resolveVersion({ source: '2.1.0', latest: '2.1.0.100', runNumber: 8 }), '2.1.1.8');
+});
+
+test('reruns reserve a different version and manual releases cannot downgrade the published release', () => {
+  assert.equal(resolveVersion({ source: '2.1.0', latest: '2.1.0', runNumber: 4, attempt: 2 }), '2.1.1.4');
+  assert.equal(resolveVersion({ source: '2.1.0', latest: '2.1.0.4', requested: '2.2.0' }), '2.2.0');
+  assert.throws(() => resolveVersion({ source: '2.1.0', latest: '2.1.0.4', requested: '2.1.0' }));
+  assert.throws(() => resolveVersion({ source: '2.1.0', runNumber: 65536 }));
+  assert.throws(() => resolveVersion({ source: '2.1.0', runNumber: 1, requested: '2.1.0\nversion=evil' }));
+});
 
 function fixture(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ipravdin-release-'));
