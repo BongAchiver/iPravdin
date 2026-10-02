@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "iPravdin",
-  "description": "Немного Правдина в каждом интернете. Заменяет изображения двумя локальными фотографиями Правдина, без слежки и внешних запросов.",
-  "version": "2.0.1",
+  "description": "Правдин в интернете и персональное расписание ИТМО через ваш аккаунт my.itmo. Без аналитики и серверов разработчика.",
+  "version": "2.1.0",
   "icons": {
     "16": "ipravdin/logo.svg",
     "48": "ipravdin/logo.svg",
@@ -39,6 +39,17 @@
       ],
       "run_at": "document_idle",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "https://my.itmo.ru/*"
+      ],
+      "js": [
+        "ipravdin/schedule.js",
+        "ipravdin/itmo-content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "web_accessible_resources": [
