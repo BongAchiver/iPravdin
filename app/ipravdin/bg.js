@@ -2,7 +2,7 @@
 let updates = Promise.resolve();
 function refresh() {
   updates = updates.then(async () => {
-    const settings = PravdinSettings.normalize(await browser.storage.local.get());
+    const settings = PravdinSettings.normalize(await browser.storage.local.get(Object.keys(PravdinSettings.defaults)));
     await browser.contextMenus.removeAll();
     if (settings.contextmenu) {
       browser.contextMenus.create({ id: 'toggle', contexts: ['page', 'image'], title: settings.activate ? 'Выключить iPravdin' : 'Включить iPravdin' });
@@ -19,7 +19,7 @@ browser.contextMenus.onClicked.addListener(async info => {
   try {
     if (info.menuItemId === 'settings') await browser.runtime.openOptionsPage();
     if (info.menuItemId === 'toggle') {
-      const settings = PravdinSettings.normalize(await browser.storage.local.get());
+      const settings = PravdinSettings.normalize(await browser.storage.local.get(Object.keys(PravdinSettings.defaults)));
       await browser.storage.local.set({ activate: !settings.activate });
     }
   } catch (error) { console.error('iPravdin: menu action failed', error); }

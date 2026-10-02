@@ -128,5 +128,5 @@
     for (const [key, change] of Object.entries(changes)) updated[key] = change.newValue;
     apply(updated);
   });
-  browser.storage.local.get().then(value => { if (revision === 0) apply(value); }).catch(error => console.error('iPravdin: cannot read settings', error));
+  browser.storage.local.get(Object.keys(PravdinSettings.defaults)).then(value => { if (revision === 0) apply(value); }).catch(error => console.error('iPravdin: cannot read settings', error));
 })();

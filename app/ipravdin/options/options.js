@@ -24,7 +24,7 @@
       const name = document.createElement('span'); name.textContent = domain;
       const button = document.createElement('button'); button.type = 'button'; button.textContent = '×'; button.setAttribute('aria-label', `Удалить ${domain} из исключений`);
       button.addEventListener('click', () => save(async () => {
-        const current = PravdinSettings.normalize(await browser.storage.local.get());
+        const current = PravdinSettings.normalize(await browser.storage.local.get(Object.keys(PravdinSettings.defaults)));
         return { excluded: current.excluded.filter(item => item !== domain) };
       }));
       row.append(name, button); list.append(row);
@@ -35,11 +35,11 @@
   function save(change) {
     queue = queue.then(async () => {
       await browser.storage.local.set(typeof change === 'function' ? await change() : change);
-      settings = PravdinSettings.normalize(await browser.storage.local.get());
+      settings = PravdinSettings.normalize(await browser.storage.local.get(Object.keys(PravdinSettings.defaults)));
       render(); feedback('Сохранено');
     }).catch(async error => {
       feedback(error.message || 'Не удалось сохранить настройки', true);
-      settings = PravdinSettings.normalize(await browser.storage.local.get()); render();
+      settings = PravdinSettings.normalize(await browser.storage.local.get(Object.keys(PravdinSettings.defaults))); render();
     });
     return queue;
   }
@@ -52,7 +52,7 @@
     try { domain = PravdinSettings.domain(get('domain').value); }
     catch (error) { feedback(error.message, true); return; }
     save(async () => {
-      const current = PravdinSettings.normalize(await browser.storage.local.get());
+      const current = PravdinSettings.normalize(await browser.storage.local.get(Object.keys(PravdinSettings.defaults)));
       if (current.excluded.includes(domain)) throw new Error('Этот сайт уже в исключениях');
       if (current.excluded.length >= 200) throw new Error('Можно добавить до 200 сайтов');
       get('domain').value = '';
@@ -61,7 +61,7 @@
   });
   get('openOptions')?.addEventListener('click', () => browser.runtime.openOptionsPage().catch(error => feedback(error.message, true)));
   browser.storage.onChanged.addListener((_, area) => {
-    if (area === 'local') browser.storage.local.get().then(value => { settings = PravdinSettings.normalize(value); render(); }).catch(error => feedback(error.message, true));
+    if (area === 'local') browser.storage.local.get(Object.keys(PravdinSettings.defaults)).then(value => { settings = PravdinSettings.normalize(value); render(); }).catch(error => feedback(error.message, true));
   });
-  browser.storage.local.get().then(value => { settings = PravdinSettings.normalize(value); render(); }).catch(error => feedback(error.message, true));
+  browser.storage.local.get(Object.keys(PravdinSettings.defaults)).then(value => { settings = PravdinSettings.normalize(value); render(); }).catch(error => feedback(error.message, true));
 })();

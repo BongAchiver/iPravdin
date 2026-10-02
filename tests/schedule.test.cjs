@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { webcrypto, createHash } = require('node:crypto');
 const { JSDOM } = require('jsdom');
 const source = name => fs.readFileSync(`app/ipravdin/${name}`, 'utf8');
 const coreContext = vm.createContext({ URL, Intl, Date });
@@ -22,94 +23,181 @@ test('schedule dates and lesson progress use Moscow time and handle day boundari
   assert.equal(core.progress(normalized, '2026-10-03', new Date('2026-10-03T07:00:00Z')), 'current');
   assert.equal(core.progress(normalized, '2026-10-03', new Date('2026-10-03T08:30:00Z')), 'finished');
 });
-
-test('schedule normalization sorts lessons, strips unexpected data and distinguishes empty from malformed replies', () => {
-  const early = { ...lesson, time_start: '08:20:00', time_end: '09:50:00', token: 'should-not-leave-page' };
+test('normalization strips unexpected fields and distinguishes empty from malformed replies', () => {
+  const early = { ...lesson, time_start: '08:20:00', time_end: '09:50:00', token: 'private-field' };
   const normalized = plain(core.normalize(payload([lesson, early]), '2026-10-03'));
   assert.equal(normalized[0].start, '08:20');
   assert.equal(normalized[0].room, '321');
-  assert.equal(JSON.stringify(normalized).includes('should-not-leave-page'), false);
+  assert.equal(JSON.stringify(normalized).includes('private-field'), false);
   assert.equal(core.normalize(payload([]), '2026-10-03').length, 0);
-  for (const invalid of [{ code: 1, data: [] }, { code: 0, data: {} }, payload([{ ...lesson, time_start: '25:00' }]), payload([{ ...lesson, time_end: '09:00' }])]) {
-    assert.throws(() => core.normalize(invalid, '2026-10-03'));
-  }
+  for (const invalid of [{ code: 1, data: [] }, { code: 0, data: {} }, { code: 0, data: [{ lessons: [lesson] }] }, payload([{ ...lesson, time_start: '25:00' }]), payload([{ ...lesson, time_end: '09:00' }])]) assert.throws(() => core.normalize(invalid, '2026-10-03'));
 });
 
-function contentFixture(client) {
-  let listener;
-  const window = { wrappedJSObject: { $nuxt: client } }; window.top = window;
-  const context = vm.createContext({ window, location: { origin: core.origin }, cloneInto: value => value,
-    setTimeout, clearTimeout, Date, ItmoSchedule: core,
-    browser: { runtime: { id: 'test', getURL: value => `moz-extension://test/${value}`, onMessage: { addListener: fn => { listener = fn; } } } } });
-  vm.runInContext(source('itmo-content.js'), context);
-  return { request: (date = '2026-10-03', sender = { id: 'test', url: 'moz-extension://test/popup.html' }) => listener({ type: 'itmo:schedule', date }, sender) };
+function clientFixture({ local = {}, fetch } = {}) {
+  const session = {};
+  let intercept, handler, removed, authURL;
+  const storage = data => ({
+    get: async key => key ? Object.fromEntries((Array.isArray(key) ? key : [key]).filter(k => k in data).map(k => [k, structuredClone(data[k])])) : structuredClone(data),
+    set: async values => Object.assign(data, structuredClone(values)),
+    remove: async keys => { for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key]; }
+  });
+  const browser = {
+    storage: { local: storage(local), session: storage(session) },
+    runtime: { id: 'test', getURL: value => `moz-extension://test/${value}`, onMessage: { addListener: fn => { handler = fn; } } },
+    windows: { create: async () => ({ id: 50, tabs: [{ id: 70 }] }), remove: async id => { if (removed) await removed(id); }, onRemoved: { addListener: fn => { removed = fn; } } },
+    tabs: { update: async (_, values) => { authURL = values.url; } },
+    alarms: { create() {}, onAlarm: { addListener() {} } },
+    webRequest: { onBeforeRequest: { addListener: fn => { intercept = fn; } } }
+  };
+  const context = vm.createContext({ browser, ItmoSchedule: core, URL, URLSearchParams, crypto: webcrypto, TextEncoder, AbortSignal,
+    Date, btoa: value => Buffer.from(value, 'binary').toString('base64'), fetch: fetch || (async () => { throw new Error('Offline fixture'); }) });
+  vm.runInContext(source('itmo-client.js'), context);
+  return { api: context.ItmoClient, local, session, browser, get authURL() { return authURL; },
+    intercept: details => intercept(details), request: (message, sender = { id: 'test', url: 'moz-extension://test/popup.html' }) => handler(message, sender) };
 }
+const saved = (account = '111') => ({ key: `session-${account}`, account, subject: `subject-${account}`, accessToken: `access-${account}`, refreshToken: `refresh-${account}`, expiresAt: Date.now() + 3600000, refreshExpiresAt: Date.now() + 86400000 });
+const response = (data, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => data });
 
-test('each request uses the current site account and never reads auth tokens', async () => {
-  const client = { $auth: { loggedIn: true, user: { isu: 111 } }, $axios: { get: async url => {
-    assert.equal(url, 'https://my.itmo.ru/api/schedule/schedule/personal?date_start=2026-10-03&date_end=2026-10-03');
-    return { data: payload([{ ...lesson, subject: `Account ${client.$auth.user.isu}` }]) };
-  } } };
-  Object.defineProperty(client.$auth, 'strategy', { get() { throw new Error('Tokens must not be accessed'); } });
-  const f = contentFixture(client);
-  assert.equal((await f.request()).account, '111');
-  client.$auth.user = { isu: 222 };
-  const result = await f.request();
-  assert.equal(result.account, '222');
-  assert.equal(result.lessons[0].subject, 'Account 222');
+test('schedule loads with no tabs and a persisted local session after a background restart', async () => {
+  const local = { itmoSession: saved() };
+  const f = clientFixture({ local, fetch: async (url, options) => {
+    assert.equal(url, 'https://my.itmo.ru/api/schedule/schedule/personal?date_start=2026-10-03&date_end=2026-10-09');
+    assert.equal(options.headers.Authorization, 'Bearer access-111');
+    assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error');
+    return response(payload());
+  } });
+  const result = await f.api.schedule('2026-10-03');
+  assert.equal(result.ok, true); assert.equal(result.account, '111');
+  assert.equal(JSON.stringify(result).includes('access-111'), false);
+  const restarted = clientFixture({ local });
+  const cached = await restarted.api.schedule('2026-10-03');
+  assert.equal(cached.ok, true); assert.equal(cached.cached, true); assert.equal(cached.lessons[0].subject, 'Алгоритмы');
 });
 
-test('account changes during a request discard its response', async () => {
-  const client = { $auth: { loggedIn: true, user: { isu: 111 } }, $axios: { get: async () => {
-    client.$auth.user = { isu: 222 }; return { data: payload() };
-  } } };
-  assert.deepEqual(plain(await contentFixture(client).request()), { ok: false, code: 'ACCOUNT_CHANGED' });
+test('concurrent requests rotate an expired token only once and verify the account', async () => {
+  const local = { itmoSession: { ...saved(), expiresAt: 0 } };
+  let refreshes = 0;
+  const f = clientFixture({ local, fetch: async (url, options) => {
+    if (url.endsWith('/token')) {
+      ++refreshes; assert.equal(new URLSearchParams(options.body).get('grant_type'), 'refresh_token');
+      await new Promise(resolve => setTimeout(resolve, 15));
+      return response({ access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600, refresh_expires_in: 86400, token_type: 'Bearer' });
+    }
+    assert.equal(options.headers.Authorization, 'Bearer new-access');
+    if (url.endsWith('/userinfo')) return response({ isu: 111, sub: 'subject-111' });
+    return response(payload());
+  } });
+  const results = await Promise.all([f.api.schedule('2026-10-03'), f.api.schedule('2026-10-03')]);
+  assert.equal(refreshes, 1); assert.equal(results.every(result => result.ok), true);
+  assert.equal(local.itmoSession.refreshToken, 'new-refresh');
 });
 
-test('login errors expose no server error data and page senders cannot request a schedule', async () => {
+test('network and expired-session fallbacks clearly mark cached data', async () => {
+  const local = { itmoSession: { ...saved(), expiresAt: 0 }, itmoCache: { account: '111', subject: 'subject-111', days: { '2026-10-03': { updatedAt: 1, lessons: [plain(core.normalize(payload(), '2026-10-03'))[0]] } } } };
+  const f = clientFixture({ local, fetch: async () => response({}, 400) });
+  const result = await f.api.schedule('2026-10-03');
+  assert.equal(result.cached, true); assert.equal(result.needsLogin, true);
+  assert.equal(local.itmoSession, undefined);
+  assert.equal((await f.api.schedule('2026-10-04')).code, 'LOGIN');
+});
+
+test('switching accounts discards an in-flight response and logout removes tokens and cache', async () => {
+  const local = { itmoSession: saved() };
+  let release;
+  const f = clientFixture({ local, fetch: async url => {
+    if (url.endsWith('/revoke')) return response({});
+    return new Promise(resolve => { release = () => resolve(response(payload())); });
+  } });
+  const pending = f.api.schedule('2026-10-03');
+  await new Promise(resolve => setTimeout(resolve, 10));
+  await f.api.logout(); release();
+  assert.equal((await pending).code, 'ACCOUNT_CHANGED');
+  assert.equal(local.itmoSession, undefined); assert.equal(local.itmoCache, undefined);
+});
+
+test('OAuth uses PKCE and captures only its own window with a matching state', async () => {
+  let exchanges = 0;
+  const f = clientFixture({ fetch: async (url, options) => {
+    if (url.endsWith('/token')) {
+      ++exchanges;
+      const form = new URLSearchParams(options.body);
+      const auth = new URL(f.authURL);
+      assert.equal(createHash('sha256').update(form.get('code_verifier')).digest('base64url'), auth.searchParams.get('code_challenge'));
+      assert.equal(form.get('redirect_uri'), `${core.origin}/login/callback`);
+      return response({ access_token: 'fixture-access', refresh_token: 'fixture-refresh', expires_in: 3600, refresh_expires_in: 86400 });
+    }
+    return response({ isu: 111, sub: 'subject-111' });
+  } });
+  await f.api.login();
+  const state = new URL(f.authURL).searchParams.get('state');
+  const url = `${core.origin}/login/callback?code=fixture-code&state=${state}`;
+  assert.deepEqual(plain(await f.intercept({ tabId: 99, type: 'main_frame', url })), {});
+  assert.equal(exchanges, 0);
+  assert.equal((await f.intercept({ tabId: 70, type: 'main_frame', url })).cancel, true);
+  assert.equal(exchanges, 1); assert.equal(f.local.itmoSession.account, '111');
+  assert.equal(f.session.itmoAuthPending, undefined);
+});
+
+test('a mismatched OAuth state never exchanges a code or persists credentials', async () => {
   let calls = 0;
-  const client = { $auth: { loggedIn: true, user: { isu: 111 } }, $axios: { get: async () => {
-    ++calls; throw { response: { status: 401 }, config: { headers: { Authorization: 'secret' } }, message: 'secret' };
-  } } };
-  const f = contentFixture(client);
-  assert.equal(f.request('2026-10-03', { id: 'test', url: 'https://my.itmo.ru/' }), undefined);
-  assert.equal(calls, 0);
-  assert.deepEqual(plain(await f.request()), { ok: false, code: 'LOGIN' });
-  client.$auth.loggedIn = false;
-  assert.deepEqual(plain(await f.request()), { ok: false, code: 'LOGIN' });
-  assert.equal(calls, 1);
+  const f = clientFixture({ fetch: async () => { ++calls; return response({}); } });
+  await f.api.login();
+  await f.intercept({ tabId: 70, type: 'main_frame', url: `${core.origin}/login/callback?code=fixture&state=wrong` });
+  assert.equal(calls, 0); assert.equal(f.local.itmoSession, undefined); assert.equal(typeof f.local.itmoAuthError, 'string');
 });
 
-async function uiFixture(t, responses) {
+test('page senders cannot access sessions and background replies contain no credentials', async () => {
+  const f = clientFixture({ local: { itmoSession: saved() } });
+  assert.equal(f.request({ type: 'itmo:status' }, { id: 'test', url: 'https://my.itmo.ru/' }), undefined);
+  const state = await f.request({ type: 'itmo:status' });
+  assert.equal(state.account, '111'); assert.equal(JSON.stringify(state).includes('access-111'), false);
+});
+
+async function uiFixture(t, responses, state = () => ({ ok: true, connected: true })) {
   const dom = new JSDOM(fs.readFileSync('app/ipravdin/options/popup.html', 'utf8'), { url: 'moz-extension://test/popup.html', runScripts: 'outside-only' });
   const w = dom.window;
   t.after(() => { w.dispatchEvent(new w.Event('pagehide')); w.close(); });
   let calls = 0;
+  let storageChanged;
   w.browser = {
-    windows: { getCurrent: async () => ({ id: 1, incognito: false }) },
-    tabs: { query: async () => [{ id: 1, windowId: 1, active: true, url: 'https://my.itmo.ru/' }], onRemoved: { addListener() {} }, sendMessage: async () => responses[calls++]() }
+    storage: { onChanged: { addListener(fn) { storageChanged = fn; } } },
+    runtime: { sendMessage: async message => message.type === 'itmo:status' ? state() : responses[calls++]() }
   };
   w.eval(source('schedule.js')); w.eval(source('options/schedule-ui.js'));
-  return { w, settle: () => new Promise(resolve => setTimeout(resolve, 20)), get calls() { return calls; } };
+  return { w, changed: (changes, area) => storageChanged(changes, area), settle: () => new Promise(resolve => setTimeout(resolve, 20)) };
 }
 
-test('popup renders site markup as text and clears the old account on logout', async t => {
+test('popup loads pairs when the login window finishes after the session was saved', async t => {
+  let pending = true;
+  const f = await uiFixture(t, [async () => ({ ok: true, account: '111', date: core.today(), updatedAt: Date.now(), lessons: plain(core.normalize(payload(), '2026-10-03')) })], () => ({ ok: true, connected: true, pending }));
+  await f.settle();
+  assert.match(f.w.document.getElementById('scheduleStatus').textContent, /Завершите вход/);
+  pending = false;
+  f.changed({ itmoAuthPending: { oldValue: {} } }, 'session');
+  await f.settle();
+  assert.equal(f.w.document.querySelectorAll('.schedule-lesson').length, 1);
+  assert.match(f.w.document.getElementById('scheduleAccount').textContent, /111/);
+});
+test('popup renders markup as text and clears the old account after a login error', async t => {
   const f = await uiFixture(t, [async () => ({ ok: true, account: '111', date: core.today(), updatedAt: Date.now(), lessons: [{ ...plain(core.normalize(payload(), '2026-10-03'))[0], subject: '<img src=x onerror=alert(1)>' }] }), async () => ({ ok: false, code: 'LOGIN' })]);
   await f.settle();
   assert.match(f.w.document.getElementById('scheduleAccount').textContent, /111/);
   assert.equal(f.w.document.querySelector('#scheduleLessons img'), null);
-  assert.match(f.w.document.getElementById('scheduleLessons').textContent, /<img/);
   f.w.document.getElementById('scheduleRefresh').click(); await f.settle();
   assert.equal(f.w.document.getElementById('scheduleLessons').children.length, 0);
   assert.equal(f.w.document.getElementById('scheduleAccount').textContent.includes('111'), false);
   assert.match(f.w.document.getElementById('scheduleStatus').textContent, /Войдите/);
 });
-
 test('an earlier day response cannot overwrite a newer day request', async t => {
   let finishEarlier;
   const f = await uiFixture(t, [() => new Promise(resolve => { finishEarlier = resolve; }), async () => ({ ok: true, account: '222', date: core.shift(core.today(), 1), updatedAt: Date.now(), lessons: [] })]);
-  await f.settle();
-  f.w.document.getElementById('scheduleNext').click(); await f.settle();
+  await f.settle(); f.w.document.getElementById('scheduleNext').click(); await f.settle();
   finishEarlier({ ok: true, account: '111', date: core.today(), updatedAt: Date.now(), lessons: [] }); await f.settle();
   assert.match(f.w.document.getElementById('scheduleAccount').textContent, /222/);
+});
+test('cached pairs remain visible while the popup clearly requests a new login', async t => {
+  const f = await uiFixture(t, [async () => ({ ok: true, account: '111', date: core.today(), updatedAt: Date.now(), cached: true, needsLogin: true, lessons: plain(core.normalize(payload(), '2026-10-03')) })]);
+  await f.settle();
+  assert.equal(f.w.document.querySelectorAll('.schedule-lesson').length, 1);
+  assert.match(f.w.document.getElementById('scheduleStatus').textContent, /Сохранено.*Сессия истекла/);
 });

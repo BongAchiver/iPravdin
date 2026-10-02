@@ -1,6 +1,7 @@
 globalThis.ItmoSchedule = (() => {
   'use strict';
   const origin = 'https://my.itmo.ru';
+  const issuer = 'https://id.itmo.ru/auth/realms/itmo';
   const timezone = 'Europe/Moscow';
   function date(value) {
     if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('DATE');
@@ -29,7 +30,7 @@ globalThis.ItmoSchedule = (() => {
     const lessons = [];
     for (const day of payload.data) {
       if (!day || !Array.isArray(day.lessons) || day.lessons.length > 500) throw new Error('FORMAT');
-      const dayDate = day.date === undefined ? selectedDate : date(day.date);
+      const dayDate = date(day.date);
       if (dayDate !== selectedDate) continue;
       for (const lesson of day.lessons) {
         if (!lesson || !text(lesson.subject)) throw new Error('FORMAT');
@@ -48,5 +49,5 @@ globalThis.ItmoSchedule = (() => {
     const end = new Date(`${selectedDate}T${lesson.end}:00+03:00`).getTime();
     return now.getTime() < start ? 'upcoming' : now.getTime() < end ? 'current' : 'finished';
   }
-  return { origin, timezone, date, today, shift, text, normalize, progress };
+  return { origin, issuer, timezone, date, today, shift, text, normalize, progress };
 })();

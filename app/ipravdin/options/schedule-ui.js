@@ -2,22 +2,20 @@
   'use strict';
   const get = id => document.getElementById(id);
   const errors = {
-    LOGIN: 'Войдите в свой аккаунт на my.itmo, затем обновите расписание.',
-    CLIENT: 'my.itmo ещё загружается. Подождите и нажмите обновить.',
-    ACCOUNT_CHANGED: 'Аккаунт изменился. Обновите расписание для нового аккаунта.',
-    FORMAT: 'Формат расписания на my.itmo изменился. Не удалось прочитать пары.',
+    LOGIN: 'Войдите через ITMO ID. После входа расписание работает без вкладки my.itmo.',
+    ACCOUNT_CHANGED: 'Аккаунт изменился. Обновите расписание.',
+    FORMAT: 'Не удалось прочитать ответ ИТМО. Попробуйте обновить расписание.',
     DATE: 'Выберите корректную дату.',
-    NETWORK: 'Не удалось получить расписание. Проверьте интернет и вкладку my.itmo.',
-    TAB: 'Откройте my.itmo и войдите в свой аккаунт. Затем снова откройте расширение.'
+    FORBIDDEN: 'ИТМО не разрешил доступ к расписанию для этого аккаунта.',
+    NETWORK: 'Не удалось связаться с ИТМО. Проверьте интернет.'
   };
   let revision = 0;
-  let selectedTab;
   let snapshot;
+  const privateWindow = browser.extension?.inIncognitoContext === true;
   function clear() {
     snapshot = undefined;
-    get('scheduleLessons').replaceChildren();
-    get('scheduleNearest').hidden = true;
-    get('scheduleAccount').textContent = 'Вход через ваш аккаунт my.itmo';
+    get('scheduleLessons').replaceChildren(); get('scheduleNearest').hidden = true;
+    get('scheduleAccount').textContent = 'Вход через ваш аккаунт ITMO ID';
   }
   function status(message, error = false) {
     get('scheduleStatus').textContent = message;
@@ -31,6 +29,7 @@
     if (!snapshot) return;
     get('scheduleLessons').replaceChildren();
     get('scheduleAccount').textContent = `Аккаунт ИСУ ${snapshot.account} · Московское время`;
+    get('scheduleLogout').hidden = false;
     let nearest;
     for (const lesson of snapshot.lessons) {
       const phase = ItmoSchedule.progress(lesson, snapshot.date, now);
@@ -47,72 +46,64 @@
     const banner = get('scheduleNearest');
     banner.hidden = !nearest || snapshot.date !== ItmoSchedule.today(now);
     if (!banner.hidden) banner.textContent = `${nearest.phase === 'current' ? 'Сейчас' : `Следующая в ${nearest.lesson.start}`} · ${nearest.lesson.subject}`;
-    const updated = new Intl.DateTimeFormat('ru', { timeZone: ItmoSchedule.timezone, hour: '2-digit', minute: '2-digit' }).format(new Date(snapshot.updatedAt));
+    const updated = new Intl.DateTimeFormat('ru', { timeZone: ItmoSchedule.timezone, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(snapshot.updatedAt));
     const plural = new Intl.PluralRules('ru').select(snapshot.lessons.length);
-    const countLabel = { one: 'пара', few: 'пары', many: 'пар', other: 'пары' }[plural];
-    status(snapshot.lessons.length ? `Обновлено в ${updated} · ${snapshot.lessons.length} ${countLabel}` : `На этот день пар нет · Обновлено в ${updated}`);
-  }
-  async function findTabs() {
-    const current = await browser.windows.getCurrent();
-    const origin = new URL(ItmoSchedule.origin);
-    const found = await browser.tabs.query({ url: `${origin.protocol}//${origin.hostname}/*` });
-    const tabs = found.filter(tab => tab.url?.startsWith(`${ItmoSchedule.origin}/`) && Boolean(tab.incognito) === Boolean(current.incognito))
-      .sort((a, b) => Number(b.windowId === current.id) - Number(a.windowId === current.id) || Number(b.active) - Number(a.active) || (b.lastAccessed || 0) - (a.lastAccessed || 0));
-    if (!tabs.some(tab => tab.id === selectedTab)) selectedTab = tabs[0]?.id;
-    const select = get('scheduleTab'); select.replaceChildren();
-    for (const [index, tab] of tabs.entries()) {
-      const option = document.createElement('option'); option.value = String(tab.id);
-      option.textContent = `Вкладка ${index + 1} · ${ItmoSchedule.text(tab.title, 60) || 'my.itmo'}`; select.append(option);
-    }
-    select.value = String(selectedTab);
-    get('scheduleTabLabel').hidden = tabs.length < 2;
+    const count = `${snapshot.lessons.length} ${{ one: 'пара', few: 'пары', many: 'пар', other: 'пары' }[plural]}`;
+    if (snapshot.cached) status(`Сохранено ${updated} · ${snapshot.needsLogin ? 'Сессия истекла, войдите снова' : 'Нет связи с ИТМО'}`, true);
+    else status(`${snapshot.lessons.length ? count : 'На этот день пар нет'} · Обновлено ${updated}`);
   }
   async function load() {
     const ticket = ++revision;
-    clear(); status('Загружаем расписание…'); get('scheduleRefresh').disabled = true;
+    clear(); get('scheduleRefresh').disabled = true;
+    if (privateWindow) {
+      status('Расписание с сохранённой сессией доступно в обычном окне Firefox.');
+      get('scheduleConnect').disabled = true; get('scheduleRefresh').disabled = false; return;
+    }
+    status('Загружаем расписание…');
     try {
-      const selectedDate = ItmoSchedule.date(get('scheduleDate').value);
-      await findTabs();
+      const state = await browser.runtime.sendMessage({ type: 'itmo:status' });
       if (ticket !== revision) return;
-      if (selectedTab === undefined) throw new Error('TAB');
-      let response;
-      try { response = await browser.tabs.sendMessage(selectedTab, { type: 'itmo:schedule', date: selectedDate }, { frameId: 0 }); }
-      catch { throw new Error('TAB'); }
+      get('scheduleConnect').textContent = state.connected ? 'Сменить аккаунт ITMO ID ↗' : 'Войти через ITMO ID ↗';
+      get('scheduleLogout').hidden = !state.connected && !state.pending;
+      if (state.pending) { status('Завершите вход в открывшемся окне ITMO ID.'); return; }
+      if (state.error) { status(state.error, true); return; }
+      const selectedDate = ItmoSchedule.date(get('scheduleDate').value);
+      const response = await browser.runtime.sendMessage({ type: 'itmo:schedule', date: selectedDate });
       if (ticket !== revision) return;
       if (!response?.ok) throw new Error(response?.code || 'NETWORK');
       snapshot = response; render();
-      get('scheduleConnect').textContent = 'Открыть расписание на my.itmo ↗';
     } catch (error) {
-      if (ticket !== revision) return;
-      clear(); status(errors[error.message] || errors.NETWORK, true);
-      get('scheduleConnect').textContent = 'Открыть my.itmo и войти ↗';
+      if (ticket === revision) { clear(); status(errors[error.message] || errors.NETWORK, true); }
     } finally { if (ticket === revision) get('scheduleRefresh').disabled = false; }
   }
   get('scheduleDate').value = ItmoSchedule.today();
   get('scheduleRefresh').addEventListener('click', load);
   get('scheduleDate').addEventListener('change', load);
-  get('scheduleTab').addEventListener('change', () => { selectedTab = Number(get('scheduleTab').value); load(); });
   for (const [id, amount] of [['schedulePrev', -1], ['scheduleNext', 1]]) {
     get(id).addEventListener('click', () => { get('scheduleDate').value = ItmoSchedule.shift(get('scheduleDate').value || ItmoSchedule.today(), amount); load(); });
   }
   get('scheduleToday').addEventListener('click', () => { get('scheduleDate').value = ItmoSchedule.today(); load(); });
   get('scheduleConnect').addEventListener('click', async () => {
+    const ticket = ++revision; clear(); status('Открываем вход в ITMO ID…');
     try {
-      if (selectedTab !== undefined) {
-        const tab = await browser.tabs.get(selectedTab);
-        if (tab.url?.startsWith(`${ItmoSchedule.origin}/`)) {
-          await browser.tabs.update(selectedTab, { active: true, url: `${ItmoSchedule.origin}/schedule` });
-          await browser.windows.update(tab.windowId, { focused: true });
-          return;
-        }
-      }
-      await browser.tabs.create({ url: `${ItmoSchedule.origin}/schedule` });
-    } catch { status('Не удалось открыть my.itmo. Откройте сайт вручную.', true); }
+      const response = await browser.runtime.sendMessage({ type: 'itmo:login' });
+      if (ticket !== revision) return;
+      if (!response?.ok) throw new Error('NETWORK');
+      status('Завершите вход в окне ITMO ID. Затем снова откройте расширение.');
+    } catch { if (ticket === revision) status(errors.NETWORK, true); }
+  });
+  get('scheduleLogout').addEventListener('click', async () => {
+    ++revision; clear(); get('scheduleLogout').hidden = true;
+    get('scheduleConnect').textContent = 'Войти через ITMO ID ↗';
+    status('Удаляем сессию и сохранённое расписание…');
+    try { await browser.runtime.sendMessage({ type: 'itmo:logout' }); status(errors.LOGIN); }
+    catch { status('Не удалось завершить выход. Попробуйте ещё раз.', true); }
+  });
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && ('itmoSession' in changes || 'itmoAuthError' in changes)) load();
+    if (area === 'session' && 'itmoAuthPending' in changes) load();
   });
   const interval = setInterval(() => render(), 30000);
   window.addEventListener('pagehide', () => clearInterval(interval), { once: true });
-  browser.tabs.onRemoved.addListener(tabId => {
-    if (tabId === selectedTab) { ++revision; clear(); status(errors.TAB, true); get('scheduleRefresh').disabled = false; }
-  });
   load();
 })();
