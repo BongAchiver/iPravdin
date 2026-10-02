@@ -1,37 +1,77 @@
 {
   "manifest_version": 3,
-  "name": "__MSG_appName__",
-  "description": "__MSG_appDesc__",
-  "version": "1.1.6",
-
-  "default_locale": "ru",
-
+  "name": "iPravdin — Firefox",
+  "description": "Немного Правдина в каждом интернете. Заменяет изображения двумя локальными фотографиями Правдина, без слежки и внешних запросов.",
+  "version": "2.0.1",
   "icons": {
-    "16": "inikolayev/logo16.png",
-    "128": "inikolayev/logo128.png"
+    "16": "ipravdin/logo.svg",
+    "48": "ipravdin/logo.svg",
+    "128": "ipravdin/logo.svg"
   },
-
   "permissions": [
-  "storage",
-  "contextMenus",
-  "tabs"
-],
-
+    "storage",
+    "contextMenus"
+  ],
   "host_permissions": [
     "http://*/*",
     "https://*/*"
   ],
-
   "background": {
-    "service_worker": "inikolayev/bg.js"
+    "scripts": [
+      "ipravdin/settings.js",
+      "ipravdin/bg.js"
+    ]
   },
-
+  "action": {
+    "default_title": "iPravdin",
+    "default_popup": "ipravdin/options/popup.html",
+    "default_icon": "ipravdin/logo.svg"
+  },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["inikolayev/inikolayev.js"]
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "ipravdin/settings.js",
+        "ipravdin/ipravdin.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
-
-  "options_page": "inikolayev/options/options.html"
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "ipravdin/photos/*.jpg"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ],
+  "options_ui": {
+    "page": "ipravdin/options/options.html",
+    "open_in_tab": true
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "inikolayev-firefox@vint352.local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      },
+      "update_url": "https://github.com/BongAchiver/iPravdin/releases/latest/download/updates.json"
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
 }

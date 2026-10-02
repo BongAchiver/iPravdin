@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>iPravdin · Настройки</title><link rel="stylesheet" href="options.css"><script src="../settings.js" defer></script><script src="options.js" defer></script></head>
+<body>
+  <main class="shell">
+    <header class="header"><a class="brand" href="options.html"><span class="brand-icon" aria-hidden="true">п.</span> iPravdin<span class="edition">для Firefox</span></a><span class="pill">Локально. Без слежки.</span></header>
+    <section class="hero">
+      <div class="hero-copy"><span class="eyebrow">ИНТЕРНЕТ С ХАРАКТЕРОМ</span><h1>Всё пройдёт.<br>Правдин <em>останется.</em></h1><p>Любимые сайты, неожиданные фотографии.<br>Добавьте немного Правдина в обычный день.</p><div class="hero-meta"><span class="status-dot"></span><span id="heroStatus">Загружаем настройки…</span></div></div>
+      <div class="portrait"><img src="../photos/portrait.jpg" alt="Правдин"><span class="portrait-caption">На случай, если интернету не хватает Правдина.</span><span class="portrait-number" aria-hidden="true">01 / ПРАВДИН</span></div>
+    </section>
+    <section class="dashboard" aria-label="Настройки расширения">
+      <div class="card controls"><div class="section-heading"><span class="eyebrow">01 / УПРАВЛЕНИЕ</span><h2>Настроение интернета</h2></div>
+        <label class="setting"><span><strong>Режим Правдина</strong><small>Заменять фотографии на открытых страницах</small></span><input id="activate" class="toggle" type="checkbox" role="switch" disabled></label>
+        <label class="setting"><span><strong>Быстрое переключение</strong><small>Пункт в меню по правому клику</small></span><input id="contextmenu" class="toggle" type="checkbox" role="switch" disabled></label>
+        <label class="setting"><span><strong>Беречь мелочи</strong><small>Оставлять иконки меньше 48 px как есть</small></span><input id="skipSmall" class="toggle" type="checkbox" role="switch" disabled></label>
+        <div class="note"><span aria-hidden="true">↺</span> Изменения применяются сразу. При выключении вернутся исходные изображения.</div>
+      </div>
+      <div class="card exclusions"><div class="section-heading"><span class="eyebrow">02 / ИСКЛЮЧЕНИЯ</span><h2>Здесь без Правдина</h2><p>Оставьте некоторые сайты в привычном виде.<br>Поддомены тоже попадут в исключения.</p></div>
+        <form id="domainForm"><label class="sr-only" for="domain">Домен сайта</label><div class="input-row"><input id="domain" placeholder="example.org" maxlength="253" autocomplete="off" spellcheck="false" required><button type="submit" id="addDomain" disabled>Добавить <span aria-hidden="true">+</span></button></div></form>
+        <ul id="excludedList" class="domain-list" aria-label="Исключённые сайты"></ul><p id="emptyList" class="empty-list">Пока все сайты на одной волне.</p>
+      </div>
+    </section>
+    <footer><span>Две фотографии. Много возможностей.</span><span>iPravdin <span class="footer-version">2.0</span></span></footer>
+    <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+  </main>
+</body></html>

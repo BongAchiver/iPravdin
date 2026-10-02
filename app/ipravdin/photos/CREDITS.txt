@@ -1,0 +1,4 @@
+portrait.jpg: PRAVDIN.jpg supplied by the user.
+closeup.jpg: PRAVDIN2.jpg supplied by the user.
+Both files are copied unchanged. Display may be cropped to fit page images.
+Photographer and license information were not provided.
