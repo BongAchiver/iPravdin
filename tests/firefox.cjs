@@ -82,9 +82,13 @@ const server = http.createServer((req, res) => {
     await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(async v=>{v.gameState={...PravdinGame.empty(),...v.gameState,mood:24};await browser.storage.local.set({gameState:v.gameState});done(true)})');
     await driver.wait(async () => (await driver.findElement(By.css('[role="progressbar"]')).getAttribute('aria-valuenow')) === '24', 5000);
     await driver.wait(async () => (await driver.findElement(By.css('.companion-photo')).getAttribute('src')).endsWith('/reactions/stern.jpg'), 5000);
-    await driver.findElement(By.css('.companion-actions [data-interact="pet"]')).click();
+    await driver.findElement(By.css('.companion-head')).click();
     await driver.wait(async () => (await driver.findElement(By.css('[role="progressbar"]')).getAttribute('aria-valuenow')) === '27', 5000);
     await driver.wait(async () => (await driver.findElement(By.css('.companion-photo')).getAttribute('src')).endsWith('/reactions/happy.jpg'), 5000);
+    const talk = await driver.findElement(By.css('.companion-actions [data-interact="talk"]'));
+    assert.ok((await talk.getText()).includes('Поболтать'));
+    await talk.click();
+    await driver.wait(async () => await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(v=>done(v.gameState.lastAction.kind==="talk"))'), 5000);
     fs.writeFileSync('artifacts/popup.png', await driver.findElement(By.css('main')).takeScreenshot(), 'base64');
     await driver.findElement(By.id('activate')).click();
     await driver.switchTo().window(pageTab);
