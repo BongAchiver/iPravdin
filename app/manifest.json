@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "iPravdin",
   "description": "Правдин в интернете: фотографии, задачки по матану, настроение, прятки и коллекция редких Правдиных. Без аналитики.",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "icons": {
     "16": "ipravdin/icons/icon-16.png",
     "32": "ipravdin/icons/icon-32.png",
@@ -23,6 +23,8 @@
     "scripts": [
       "ipravdin/settings.js",
       "ipravdin/bg.js",
+      "ipravdin/game-bank.js",
+      "ipravdin/game-lines.js",
       "ipravdin/game.js",
       "ipravdin/game-bg.js"
     ]
@@ -30,7 +32,11 @@
   "action": {
     "default_title": "iPravdin",
     "default_popup": "ipravdin/options/popup.html",
-    "default_icon": { "16": "ipravdin/icons/icon-16.png", "32": "ipravdin/icons/icon-32.png", "48": "ipravdin/icons/icon-48.png" }
+    "default_icon": {
+      "16": "ipravdin/icons/icon-16.png",
+      "32": "ipravdin/icons/icon-32.png",
+      "48": "ipravdin/icons/icon-48.png"
+    }
   },
   "content_scripts": [
     {
@@ -40,6 +46,8 @@
       ],
       "js": [
         "ipravdin/settings.js",
+        "ipravdin/game-bank.js",
+        "ipravdin/game-lines.js",
         "ipravdin/game.js",
         "ipravdin/ipravdin.js",
         "ipravdin/game-content.js"

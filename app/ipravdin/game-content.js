@@ -63,7 +63,7 @@
       button('Свернуть на время', () => { box.hidden = true; const reopen = button('Правдин ждёт…', () => { reopen.remove(); box.hidden = false; }, root); reopen.className = 'reopen'; });
     } else {
       el('h3', 'Правдин наблюдает');
-      el('p', ['Определение предела помните?', 'Кванторы сами себя не переставят.', 'Супремум есть. А понимание?', 'Я всё вижу. Даже вашу бесконечно малую подготовку.'][Math.floor(Math.random() * 4)]);
+      el('p', e.text || 'Правдин наблюдает. Можно предложить чай или поболтать.');
       button('☕ Предложить чай', async () => { const r = await send('tea'); status(r.error || r.text); });
       button('Поговорить', async () => { const r = await send('talk'); status(r.error || r.text); });
       button('Я учусь, честно', async () => { await send('dismiss', { id: e.id }); close(); });
@@ -84,7 +84,7 @@
     const b = document.createElement('button'); b.type = 'button'; b.title = 'Кажется, это Правдин…'; b.setAttribute('aria-label', 'Нашёл Правдина');
     b.style.cssText = 'border:0;background:transparent;padding:3px;cursor:pointer;display:inline-block;vertical-align:middle';
     const img = document.createElement('img'); img.src = browser.runtime.getURL('ipravdin/photos/portrait.jpg'); img.alt = 'Правдин спрятался'; img.style.cssText = 'width:38px;height:44px;object-fit:cover;border-radius:10px;'; b.append(img); shadow.append(b); target.append(hiddenPet);
-    b.addEventListener('click', async () => { b.disabled = true; try { const result = await send('found', { id: q.id }); if (result.error) { b.disabled = false; return; } quest(result.state, true); resultView({ ...result, text: 'Нашли! +25 баллов. А теперь можно вернуться к матану.' }); } catch { b.disabled = false; } });
+    b.addEventListener('click', async () => { b.disabled = true; try { const result = await send('found', { id: q.id }); if (result.error) { b.disabled = false; return; } quest(result.state, true); resultView(result); } catch { b.disabled = false; } });
   }
   async function sync() {
     const values = await browser.storage.local.get(['gameState', 'gamePrefs', ...Object.keys(PravdinSettings.defaults)]);

@@ -89,6 +89,14 @@ const server = http.createServer((req, res) => {
     assert.ok((await talk.getText()).includes('Поболтать'));
     await talk.click();
     await driver.wait(async () => await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(v=>done(v.gameState.lastAction.kind==="talk"))'), 5000);
+    const phrases = new Set();
+    for (let i = 0; i < 6; i++) {
+      await driver.wait(async () => await talk.isEnabled(), 5000); await talk.click();
+      await driver.wait(async () => await talk.isEnabled(), 5000);
+      const phrase = await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(v=>done(v.gameState.lastAction.text))');
+      assert.ok(!phrases.has(phrase)); phrases.add(phrase);
+    }
+    assert.equal(await driver.executeScript('return PravdinGame.questions.length'), 404);
     fs.writeFileSync('artifacts/popup.png', await driver.findElement(By.css('main')).takeScreenshot(), 'base64');
     await driver.findElement(By.id('activate')).click();
     await driver.switchTo().window(pageTab);

@@ -3,7 +3,69 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { JSDOM } = require('jsdom');
-const read = name => fs.readFileSync(`app/ipravdin/${name}`, 'utf8');
+const read = name => (name === 'game.js' ? ['game-bank.js', 'game-lines.js', name] : [name]).map(file => fs.readFileSync(`app/ipravdin/${file}`, 'utf8')).join('\n');
+test('the expanded bank has unique questions, valid alternatives and preserved original IDs', () => {
+  const context = vm.createContext({ URL }); vm.runInContext(read('game.js'), context); const G = context.PravdinGame;
+  assert.equal(G.questions.length, 404);
+  assert.equal(new Set(G.questions.map(q => q.text)).size, G.questions.length);
+  assert.equal(new Set(G.questions.map(q => q.category)).size, 13);
+  assert.equal(G.questions[0].category, 'Кванторы'); assert.match(G.questions[19].text, /Непрерывность/);
+  for (const q of G.questions) {
+    assert.equal(new Set(q.answers).size, q.answers.length, q.text);
+    assert.ok(q.answers.length >= 2 && q.correct >= 0 && q.correct < q.answers.length, q.text);
+    assert.ok(q.explanation.trim().length > 0, q.text);
+    const mixed = G.shuffled(q); assert.equal(mixed.answers[mixed.correct], q.answers[q.correct]);
+  }
+});
+test('numerical answers agree with independent evaluations of limits, integrals and series', () => {
+  const context = vm.createContext({ URL }); vm.runInContext(read('game.js'), context); const G = context.PravdinGame;
+  const value = s => { const [a, b = 1] = s.split('/').map(Number); return a / b; };
+  let checked = 0;
+  for (const q of G.questions) {
+    let m, actual;
+    if ((m = q.text.match(/^lim sin\((\d+)x\)\/x/))) actual = Math.sin(Number(m[1]) * 1e-6) / 1e-6;
+    else if ((m = q.text.match(/^lim \(1−cos\((\d+)x\)\)\/x²/))) actual = 2 * (Math.sin(Number(m[1]) * 1e-4 / 2) / 1e-4) ** 2;
+    else if ((m = q.text.match(/^lim \(√\(n²\+(\d+)n\)−n\)/))) actual = Math.sqrt(1e12 + Number(m[1]) * 1e6) - 1e6;
+    else if ((m = q.text.match(/^Вычислите ∫₀¹ x\^(\d+) dx/))) { actual = 0; for (let i = 0; i < 10000; i++) actual += ((i + .5) / 10000) ** Number(m[1]) / 10000; }
+    else if ((m = q.text.match(/^Найдите сумму Σₙ₌₀∞ \(1\/(\d+)\)ⁿ/))) { actual = 0; for (let i = 0; i < 60; i++) actual += (1 / Number(m[1])) ** i; }
+    else if ((m = q.text.match(/^lim n ln\(1\+(\d+)\/n\)/))) actual = 1e7 * Math.log1p(Number(m[1]) / 1e7);
+    else continue;
+    assert.ok(Math.abs(actual - value(q.answers[q.correct])) < .001, q.text); checked++;
+  }
+  assert.equal(checked, 120);
+});
+test('question cycles survive serialization and never repeat before the bank is exhausted', () => {
+  const context = vm.createContext({ URL }); vm.runInContext(read('game.js'), context); const G = context.PravdinGame;
+  let state = G.empty(), previous;
+  for (let cycle = 0; cycle < 2; cycle++) {
+    const seen = new Set();
+    for (let i = 0; i < G.questions.length; i++) {
+      const q = G.nextQuestion(state); assert.notEqual(q.id, previous); assert.ok(!seen.has(q.id)); seen.add(q.id); previous = q.id;
+      state = JSON.parse(JSON.stringify(state));
+    }
+    assert.equal(seen.size, G.questions.length);
+  }
+  state.draws.questions = []; const q = G.nextQuestion(state, [0, 1, 2]); assert.ok(![0, 1, 2].includes(q.id));
+});
+test('dialogue has 305 lines, complete nonrepeating cycles and mood-specific conversations', () => {
+  const context = vm.createContext({ URL }); vm.runInContext(read('game.js'), context); const G = context.PravdinGame;
+  assert.equal(Object.values(G.lines).flat().length, 305);
+  for (const kind of Object.keys(G.lines).filter(k => !['talkHappy', 'talkStern'].includes(k))) {
+    let state = G.empty(), previous;
+    for (let cycle = 0; cycle < 2; cycle++) {
+      const seen = new Set();
+      for (let i = 0; i < G.lines[kind].length; i++) {
+        const text = G.phrase(state, kind); assert.notEqual(text, previous); assert.ok(!seen.has(text), kind); seen.add(text); previous = text;
+        state = JSON.parse(JSON.stringify(state));
+      }
+    }
+  }
+  for (const [mood, extra] of [[90, 'talkHappy'], [10, 'talkStern']]) {
+    const state = { mood }; const seen = new Set();
+    for (let i = 0; i < G.lines.talk.length + G.lines[extra].length; i++) seen.add(G.phrase(state, 'talk'));
+    assert.ok(G.lines[extra].every(s => seen.has(s)));
+  }
+});
 test('each of the 15 collectibles is reachable in its rarity and has a separate packaged JPEG', () => {
   const context = vm.createContext({ URL }); vm.runInContext(read('game.js'), context); const G = context.PravdinGame;
   const draws = [.3, .7, .95, .99]; const sizes = [5, 5, 3, 2]; const reached = new Set();
@@ -37,6 +99,25 @@ function fixture(initial = {}) {
   const sender = { tab: { id: 1 }, url: 'https://example.org/' };
   return { data, G: context.PravdinGame, install: () => installed(), now: () => now, advance: ms => { now += ms; }, send: (action, args = {}, origin = sender) => listener({ channel: 'pravdin-game', action, ...args }, origin) };
 }
+test('background preserves question and dialogue decks across a restart', async () => {
+  let f = fixture(); const seen = new Set(), lines = new Set();
+  for (let i = 0; i < 40; i++) {
+    const q = (await f.send('quiz')).state.encounter; assert.ok(!seen.has(q.question.id)); seen.add(q.question.id);
+    await f.send('skip', { id: q.id });
+    // Hold mood steady to check a full conversation context across restarts.
+    f.data.gameState.mood = 60;
+    const r = await f.send('talk'); assert.ok(!lines.has(r.text)); lines.add(r.text);
+    if (i === 19) f = fixture(f.data);
+  }
+  assert.equal(seen.size, 40); assert.equal(lines.size, 40);
+});
+test('a ticket crossing the question-deck boundary still contains three distinct questions', async () => {
+  const f = fixture({ gameState: { draws: { questions: [0] }, lastDraw: { questions: 1 } } });
+  let r = await f.send('ticket'); const ids = [];
+  for (let i = 0; i < 3; i++) { const e = r.state.encounter; ids.push(e.question.id); r = await f.send('answer', { id: e.id, answer: e.question.correct }); }
+  assert.equal(ids[0], 0); assert.equal(new Set(ids).size, 3); assert.equal(r.state.xp, 50);
+  assert.ok(r.state.draws.questions.includes(0), 'deferred question stays available after the ticket ends');
+});
 test('concurrent answers award points once and cannot be submitted by another tab', async () => {
   const f = fixture(); const start = await f.send('quiz'); const e = start.state.encounter;
   assert.ok((await f.send('answer', { id: e.id, answer: e.question.correct }, { tab: { id: 2 }, url: 'https://example.org/' })).error);

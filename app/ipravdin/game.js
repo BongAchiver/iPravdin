@@ -21,7 +21,7 @@ globalThis.PravdinGame = (() => {
     ['Предел', 'lim n(√(1+1/n)−1) при n → ∞.', ['0', '1/2', '1', '+∞'], 1, 'После умножения на сопряжённое получается 1/(√(1+1/n)+1).'],
     ['Производная', 'Найдите производную x³.', ['x²', '3x²', '3x', 'x³/3'], 1, 'По правилу степени (xᵐ)′ = m xᵐ⁻¹.'],
     ['Кванторы', 'Непрерывность f в точке a (a принадлежит области определения D):', ['∀ε>0 ∃δ>0 ∀x∈D: |x−a|<δ ⇒ |f(x)−f(a)|<ε', '∃ε>0 ∀δ>0 ∀x∈D: |x−a|<δ ⇒ |f(x)−f(a)|<ε', '∀δ>0 ∃ε>0 ∀x∈D: |f(x)−f(a)|<ε', '∀ε>0 ∃δ>0 ∃x∈D: |x−a|<δ ∧ |f(x)−f(a)|<ε'], 0, 'Для любой точности значений найдётся окрестность аргумента; условие требуется для всех x из D в этой окрестности.']
-  ].map((q, id) => ({ id, category: q[0], text: q[1], answers: q[2], correct: q[3], explanation: q[4] }));
+  ].concat(PravdinBank.questions).map((q, id) => ({ id, category: q[0], text: q[1], answers: q[2], correct: q[3], explanation: q[4] }));
   const species = [
     { id: 'ordinary', name: 'Правдин повелитель мела', tier: 0 },
     { id: 'tea', name: 'Правдин чайный', tier: 0 },
@@ -78,6 +78,25 @@ globalThis.PravdinGame = (() => {
     for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
     return { ...question, answers: order.map(i => question.answers[i]), correct: order.indexOf(question.correct) };
   }
+  function draw(state, key, pool, random = Math.random, excluded = []) {
+    state.draws ||= {}; state.lastDraw ||= {};
+    let deck = [...new Set(state.draws[key] || [])].filter(id => pool.includes(id));
+    if (!deck.some(id => !excluded.includes(id))) {
+      deck = [...pool];
+      for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+      if (deck.length > 1 && deck[0] === state.lastDraw[key]) [deck[0], deck[1]] = [deck[1], deck[0]];
+    }
+    const index = deck.findIndex(id => !excluded.includes(id));
+    const selected = deck.splice(index, 1)[0]; state.draws[key] = deck; state.lastDraw[key] = selected; return selected;
+  }
+  function nextQuestion(state, excluded = [], random = Math.random) {
+    return shuffled(questions[draw(state, 'questions', questions.map(q => q.id), random, excluded)], random);
+  }
+  function phrase(state, kind, random = Math.random) {
+    const context = kind === 'talk' ? state.mood >= 80 ? PravdinLines.talkHappy : state.mood < 50 ? PravdinLines.talkStern : [] : [];
+    const pool = [...PravdinLines[kind], ...context];
+    return draw(state, `phrase:${kind}`, pool, random);
+  }
   const samePage = (a, b) => { try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && decodeURIComponent(x.pathname) === decodeURIComponent(y.pathname); } catch { return false; } };
-  return { questions, species, quests, empty, mood, roll, eventKind, preferences, visual, shuffled, samePage };
+  return { questions, species, quests, empty, mood, roll, eventKind, preferences, visual, shuffled, samePage, nextQuestion, phrase, lines: PravdinLines };
 })();
