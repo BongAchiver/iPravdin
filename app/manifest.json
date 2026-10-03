@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "iPravdin",
-  "description": "Заменяет изображения в интернете фотографиями Правдина. Локальные фотографии, настройки и исключения для сайтов. Без аналитики.",
-  "version": "2.3.0",
+  "description": "Правдин в интернете: фотографии, задачки по матану, настроение, прятки и коллекция редких Правдиных. Без аналитики.",
+  "version": "2.4.0",
   "icons": {
     "16": "ipravdin/logo.svg",
     "48": "ipravdin/logo.svg",
@@ -19,7 +19,9 @@
   "background": {
     "scripts": [
       "ipravdin/settings.js",
-      "ipravdin/bg.js"
+      "ipravdin/bg.js",
+      "ipravdin/game.js",
+      "ipravdin/game-bg.js"
     ]
   },
   "action": {
@@ -35,7 +37,9 @@
       ],
       "js": [
         "ipravdin/settings.js",
-        "ipravdin/ipravdin.js"
+        "ipravdin/ipravdin.js",
+        "ipravdin/game.js",
+        "ipravdin/game-content.js"
       ],
       "run_at": "document_idle",
       "all_frames": true
@@ -44,7 +48,9 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "ipravdin/photos/*.jpg"
+        "ipravdin/photos/*.jpg",
+        "ipravdin/collectibles/*.jpg",
+        "ipravdin/game.css"
       ],
       "matches": [
         "http://*/*",

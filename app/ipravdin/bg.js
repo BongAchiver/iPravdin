@@ -12,7 +12,7 @@ function refresh() {
     await browser.action.setBadgeBackgroundColor({ color: '#6854d9' });
   }).catch(error => console.error('iPravdin: settings update failed', error));
 }
-browser.storage.onChanged.addListener((_, area) => { if (area === 'local') refresh(); });
+browser.storage.onChanged.addListener((changes, area) => { if (area === 'local' && Object.keys(changes).some(key => key in PravdinSettings.defaults)) refresh(); });
 browser.runtime.onInstalled.addListener(async () => {
   // Remove local credentials and cached data left by the retired schedule feature.
   await browser.storage.local.remove(['itmoSession', 'itmoCache', 'itmoAuthError']);

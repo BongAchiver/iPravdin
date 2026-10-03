@@ -27,6 +27,7 @@
     originals.delete(img);
   }
   function replace(img) {
+    if (document.documentElement.dataset.pravdinQuest === 'true') return;
     if (!img.isConnected || failed.has(img)) return;
     const rect = img.getBoundingClientRect();
     if (!rect.width || !rect.height || (settings.skipSmall && (rect.width < 48 || rect.height < 48))) return;
@@ -119,10 +120,12 @@
     observe();
   }, true);
   window.addEventListener('resize', rescan);
+  window.addEventListener('pravdin-quest-change', () => apply(settings));
   window.addEventListener('pagehide', () => { running = false; observer.disconnect(); pending.clear(); });
   window.addEventListener('pageshow', event => { if (event.persisted) apply(settings); });
   browser.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
+    if (!Object.keys(changes).some(key => key in PravdinSettings.defaults)) return;
     revision++;
     const updated = { ...settings };
     for (const [key, change] of Object.entries(changes)) updated[key] = change.newValue;

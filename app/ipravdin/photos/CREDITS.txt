@@ -2,3 +2,9 @@ portrait.jpg: PRAVDIN.jpg supplied by the user.
 closeup.jpg: PRAVDIN2.jpg supplied by the user.
 Both files are copied unchanged. Display may be cropped to fit page images.
 Photographer and license information were not provided.
+
+../collectibles/*.jpg: 15 AI-generated fictional costume illustrations, created
+with the built-in image_gen tool using portrait.jpg as the identity reference.
+These are separate generated images, not photographs of real costumes or events.
+Original photographs are preserved unchanged. Generation prompts are recorded
+in art/collectibles/prompts.json in the source repository (outside the XPI).

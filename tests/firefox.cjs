@@ -9,6 +9,7 @@ const html = `<!doctype html><html><head><title>Image replacement fixture</title
 <img id="normal" width="200" height="120" src="/original.jpg" style="object-fit:contain">
 <picture><source srcset="/original.jpg 2x"><img id="responsive" width="200" height="120" src="/original.jpg" srcset="/original.jpg 1x"></picture>
 <img id="small" width="24" height="24" src="/original.jpg"><iframe src="/frame"></iframe>
+<main id="mw-content-text"><p>Здесь находится учебный текст для проверки пряток. Этот абзац достаточно длинный, чтобы Правдин мог спрятаться внутри статьи, а пользователь мог найти его фотографию и нажать на неё.</p></main>
 </body></html>`;
 const server = http.createServer((req, res) => {
   requests.push(req.url);
@@ -78,8 +79,61 @@ const server = http.createServer((req, res) => {
     await driver.findElement(By.id('activate')).click();
     await driver.switchTo().window(pageTab);
     await driver.wait(async () => (await driver.findElement(By.id('normal')).getAttribute('src')) === `${url}/original.jpg`, 5000);
+    await driver.switchTo().window(settingsTab);
+    await driver.findElement(By.id('activate')).click();
+    await driver.get(`${base}ipravdin/options/practice.html`);
+    await driver.wait(async () => (await driver.findElements(By.id('ipravdin-encounter'))).length > 0, 5000);
+    const game = await driver.findElement(By.id('ipravdin-encounter')).getShadowRoot();
+    await driver.wait(async () => (await game.findElements(By.css('.answers button'))).length >= 2, 5000);
+    assert.equal(await (await game.findElement(By.css('.pet img'))).getAttribute('alt'), 'Правдин');
+    fs.writeFileSync('artifacts/game-question.png', await driver.takeScreenshot(), 'base64');
+    await (await game.findElement(By.css('.answers button'))).click();
+    await driver.wait(async () => (await (await game.findElement(By.css('p'))).getText()).includes('Правильный ответ'), 5000);
+    fs.writeFileSync('artifacts/game-answer.png', await driver.takeScreenshot(), 'base64');
+    const progress = await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(v=>done(v.gameState))');
+    assert.equal(progress.attempted, 1);
+    await driver.get(`${base}ipravdin/options/options.html`);
+    await driver.wait(async () => (await driver.findElement(By.css('.game-stats')).getText()).includes('баллов'), 5000);
+    assert.equal((await driver.findElements(By.css('.specimen'))).length, 15);
+    // Force encounters in this disposable profile so browser tests do not wait for random events.
+    await driver.executeAsyncScript(`const url=arguments[0],done=arguments[1];Promise.all([browser.tabs.query({}),browser.storage.local.get('gameState')]).then(async ([tabs,v])=>{
+      const tab=tabs.find(t=>t.url?.startsWith(url));
+      v.gameState.encounter={id:'browser-rare',tab:tab.id,kind:'rare',species:'legend',expires:Date.now()+60000};
+      await browser.storage.local.set({gameState:v.gameState});done(true);
+    }).catch(e=>done(String(e)))`, url);
+    await driver.switchTo().window(pageTab);
+    await driver.wait(async () => (await driver.findElements(By.id('ipravdin-encounter'))).length > 0, 25000);
+    const rare = await driver.findElement(By.id('ipravdin-encounter')).getShadowRoot();
+    assert.match(await (await rare.findElement(By.css('h3'))).getText(), /абсолютный/);
+    const rareImage = await rare.findElement(By.css('.pet img'));
+    assert.ok((await rareImage.getAttribute('src')).endsWith('/collectibles/legend.jpg'));
+    await driver.wait(async () => await driver.executeScript('return arguments[0].naturalWidth > 0', rareImage), 5000);
+    const catchButtons = await rare.findElements(By.css('button'));
+    for (const b of catchButtons) if ((await b.getText()).includes('Поймать')) await b.click();
+    await driver.wait(async () => (await (await rare.findElement(By.css('p'))).getText()).includes('пойман'), 5000);
+    fs.writeFileSync('artifacts/game-catch.png', await driver.takeScreenshot(), 'base64');
+    await driver.switchTo().window(settingsTab);
+    const caught = await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(v=>done(v.gameState.collection.legend))');
+    assert.equal(caught, 1);
+    await driver.executeAsyncScript('const url=arguments[0],done=arguments[1];browser.storage.local.get("gameState").then(async v=>{v.gameState.quest={id:"browser-quest",url};await browser.storage.local.set({gameState:v.gameState});done(true)})', url + '/');
+    await driver.switchTo().window(pageTab);
+    await driver.wait(async () => (await driver.findElements(By.id('ipravdin-hidden'))).length === 1, 5000);
+    assert.equal(await driver.findElement(By.id('normal')).getAttribute('src'), `${url}/original.jpg`);
+    const hiding = await driver.findElement(By.id('ipravdin-hidden')).getShadowRoot();
+    await (await hiding.findElement(By.css('button'))).click();
+    await driver.wait(async () => (await driver.findElements(By.id('ipravdin-hidden'))).length === 0, 5000);
+    await driver.switchTo().window(settingsTab);
+    const found = await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(v=>done(v.gameState.found))');
+    assert.equal(found, 1);
+    await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(async v=>{v.gameState.collection=Object.fromEntries(PravdinGame.species.map(s=>[s.id,1]));await browser.storage.local.set({gameState:v.gameState});done(true)})');
+    await driver.wait(async () => await driver.executeScript('return [...document.querySelectorAll(".specimen img")].length===15 && [...document.querySelectorAll(".specimen img")].every(i=>i.naturalWidth>0 && i.src.includes("/collectibles/"))'), 5000);
+    await driver.executeScript('document.getElementById("gamePanel").scrollIntoView()');
+    fs.writeFileSync('artifacts/game-collection.png', await driver.takeScreenshot(), 'base64');
+    await driver.findElement(By.css('.specimen button')).click();
+    assert.equal(await driver.findElement(By.css('.specimen-preview')).isDisplayed(), true);
+    await driver.findElement(By.css('.specimen-preview button')).click();
     console.log('Firefox version:', (await driver.getCapabilities()).get('browserVersion'));
-    console.log('PASS: Firefox add-on install, local photo decoding, responsive/dynamic images, iframe, restoration, exclusions, settings and popup.');
+    console.log('PASS: Firefox add-on install, images, restoration, exclusions, settings, popup, quiz, explanations, grade book, rare capture, collection and hide-and-seek.');
     console.log('Fixture HTTP requests:', JSON.stringify(requests));
   } finally { await driver.quit(); server.close(); }
 })().catch(error => { console.error(error); server.close(); process.exitCode = 1; });
