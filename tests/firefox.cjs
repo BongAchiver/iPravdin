@@ -5,7 +5,7 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const requests = [];
-const html = `<!doctype html><html><head><title>Image replacement fixture</title></head><body>
+const html = `<!doctype html><html><head><meta charset="utf-8"><title>Image replacement fixture</title></head><body>
 <img id="normal" width="200" height="120" src="/original.jpg" style="object-fit:contain">
 <picture><source srcset="/original.jpg 2x"><img id="responsive" width="200" height="120" src="/original.jpg" srcset="/original.jpg 1x"></picture>
 <img id="small" width="24" height="24" src="/original.jpg"><iframe src="/frame"></iframe>
@@ -28,7 +28,10 @@ const server = http.createServer((req, res) => {
   try {
     const version = JSON.parse(fs.readFileSync('app/manifest.json', 'utf8')).version;
     const zip = `ipravdin-firefox-${version}.zip`;
-    await driver.installAddon(path.resolve('dist', zip), true);
+    const signed = process.argv[2] === '--signed' ? path.resolve(process.argv[3]) : null;
+    await driver.installAddon(signed || path.resolve('dist', zip), !signed);
+    await driver.get('moz-extension://82cf49f6-d6ad-44ce-bc1d-9bd2d9c304fe/ipravdin/options/options.html');
+    await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.set({gamePrefs:PravdinGame.preferences({collectibleChance:0})}).then(done)');
     await driver.get(url);
     await driver.wait(async () => (await driver.findElement(By.id('normal')).getAttribute('src')).startsWith('moz-extension:'), 15000);
     assert.equal(await driver.executeScript('return document.querySelector("#normal").naturalWidth > 0'), true);
@@ -75,6 +78,13 @@ const server = http.createServer((req, res) => {
     await driver.switchTo().window(settingsTab);
     await driver.get(`${base}ipravdin/options/popup.html`);
     await driver.wait(async () => await driver.findElement(By.id('activate')).isEnabled(), 5000);
+    await driver.wait(async () => (await driver.findElement(By.css('.mood-value')).getText()).includes('/100'), 5000);
+    await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(async v=>{v.gameState={...PravdinGame.empty(),...v.gameState,mood:24};await browser.storage.local.set({gameState:v.gameState});done(true)})');
+    await driver.wait(async () => (await driver.findElement(By.css('[role="progressbar"]')).getAttribute('aria-valuenow')) === '24', 5000);
+    await driver.wait(async () => (await driver.findElement(By.css('.companion-photo')).getAttribute('src')).endsWith('/reactions/stern.jpg'), 5000);
+    await driver.findElement(By.css('.companion-actions [data-interact="pet"]')).click();
+    await driver.wait(async () => (await driver.findElement(By.css('[role="progressbar"]')).getAttribute('aria-valuenow')) === '27', 5000);
+    await driver.wait(async () => (await driver.findElement(By.css('.companion-photo')).getAttribute('src')).endsWith('/reactions/happy.jpg'), 5000);
     fs.writeFileSync('artifacts/popup.png', await driver.findElement(By.css('main')).takeScreenshot(), 'base64');
     await driver.findElement(By.id('activate')).click();
     await driver.switchTo().window(pageTab);
@@ -95,23 +105,36 @@ const server = http.createServer((req, res) => {
     await driver.get(`${base}ipravdin/options/options.html`);
     await driver.wait(async () => (await driver.findElement(By.css('.game-stats')).getText()).includes('баллов'), 5000);
     assert.equal((await driver.findElements(By.css('.specimen'))).length, 15);
-    // Force encounters in this disposable profile so browser tests do not wait for random events.
-    await driver.executeAsyncScript(`const url=arguments[0],done=arguments[1];Promise.all([browser.tabs.query({}),browser.storage.local.get('gameState')]).then(async ([tabs,v])=>{
-      const tab=tabs.find(t=>t.url?.startsWith(url));
-      v.gameState.encounter={id:'browser-rare',tab:tab.id,kind:'rare',species:'legend',expires:Date.now()+60000};
-      await browser.storage.local.set({gameState:v.gameState});done(true);
-    }).catch(e=>done(String(e)))`, url);
+    // Use the user-facing debug controls to inject a page image and capture it.
+      await driver.findElement(By.id('debugEnabled')).click();
+      for (const [control, selector, screenshot] of [
+        ['debugQuiz', '.answers button', 'game-corner'],
+        ['debugTicket', '.answers button', 'game-debug-ticket'],
+        ['debugWatch', '.pet img', 'game-watch']
+      ]) {
+        await driver.findElement(By.id(control)).click();
+        await driver.switchTo().window(pageTab);
+        await driver.wait(async () => (await driver.findElements(By.id('ipravdin-encounter'))).length > 0, 5000);
+        const encounterRoot = await driver.findElement(By.id('ipravdin-encounter')).getShadowRoot();
+        await driver.wait(async () => (await encounterRoot.findElements(By.css(selector))).length > 0, 5000);
+        if (control === 'debugTicket') assert.ok((await (await encounterRoot.findElement(By.css('h3'))).getText()).includes('Билет'));
+        if (control === 'debugWatch') assert.equal(await (await encounterRoot.findElement(By.css('h3'))).getText(), 'Правдин наблюдает');
+        fs.writeFileSync(`artifacts/${screenshot}.png`, await driver.takeScreenshot(), 'base64');
+        await (await encounterRoot.findElement(By.css('.bar button'))).click();
+        await driver.wait(async () => (await driver.findElements(By.id('ipravdin-encounter'))).length === 0, 5000);
+        await driver.switchTo().window(settingsTab);
+      }
+      await driver.executeScript('document.getElementById("debugSpecies").value="legend"');
+    await driver.findElement(By.id('debugImage')).click();
     await driver.switchTo().window(pageTab);
-    await driver.wait(async () => (await driver.findElements(By.id('ipravdin-encounter'))).length > 0, 25000);
-    const rare = await driver.findElement(By.id('ipravdin-encounter')).getShadowRoot();
-    assert.match(await (await rare.findElement(By.css('h3'))).getText(), /абсолютный/);
-    const rareImage = await rare.findElement(By.css('.pet img'));
-    assert.ok((await rareImage.getAttribute('src')).endsWith('/collectibles/legend.jpg'));
-    await driver.wait(async () => await driver.executeScript('return arguments[0].naturalWidth > 0', rareImage), 5000);
-    const catchButtons = await rare.findElements(By.css('button'));
-    for (const b of catchButtons) if ((await b.getText()).includes('Поймать')) await b.click();
-    await driver.wait(async () => (await (await rare.findElement(By.css('p'))).getText()).includes('пойман'), 5000);
-    fs.writeFileSync('artifacts/game-catch.png', await driver.takeScreenshot(), 'base64');
+    await driver.wait(async () => (await driver.findElements(By.css('[data-ipravdin-collectible="legend"]'))).length > 0, 5000);
+    const card = await driver.findElement(By.css('[data-ipravdin-collectible="legend"]'));
+      assert.ok((await card.getAttribute('src')).endsWith('/collectibles/legend.jpg'));
+      assert.equal(await driver.executeScript('return arguments[0].style.objectFit', card), 'contain');
+    await driver.wait(async () => await driver.executeScript('return arguments[0].naturalWidth > 0', card), 5000);
+    fs.writeFileSync('artifacts/game-image-card.png', await driver.takeScreenshot(), 'base64');
+    await card.click();
+    await driver.wait(async () => (await card.getAttribute('src')).includes('/photos/'), 5000);
     await driver.switchTo().window(settingsTab);
     const caught = await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(v=>done(v.gameState.collection.legend))');
     assert.equal(caught, 1);
@@ -132,8 +155,22 @@ const server = http.createServer((req, res) => {
     await driver.findElement(By.css('.specimen button')).click();
     assert.equal(await driver.findElement(By.css('.specimen-preview')).isDisplayed(), true);
     await driver.findElement(By.css('.specimen-preview button')).click();
+    // Manual tickets must work with both image replacement and automatic events off.
+    await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(async v=>{v.gameState.encounter=null;v.gameState.ticketDay=null;await browser.storage.local.set({activate:false,gamePrefs:PravdinGame.preferences({enabled:false,collectibleChance:0}),gameState:v.gameState});done(true)})');
+    await driver.get(`${base}ipravdin/options/practice.html?mode=ticket`);
+    await driver.wait(async () => (await driver.findElements(By.id('ipravdin-encounter'))).length > 0, 5000);
+    const ticket = await driver.findElement(By.id('ipravdin-encounter')).getShadowRoot();
+    for (let i=0;i<3;i++) {
+      await driver.wait(async () => (await ticket.findElements(By.css('.answers button'))).length >= 2, 5000);
+      const correct = await driver.executeAsyncScript('const done=arguments[0];browser.storage.local.get("gameState").then(v=>done(v.gameState.encounter.question.correct))');
+      await (await ticket.findElements(By.css('.answers button')))[correct].click();
+      await driver.wait(async () => (await (await ticket.findElement(By.css('p'))).getText()).includes(': '), 5000);
+      if (i<2) { const buttons=await ticket.findElements(By.css('button')); await buttons[1].click(); }
+    }
+    await driver.wait(async () => (await (await ticket.findElement(By.css('p'))).getText()).includes('3/3'), 5000);
+    fs.writeFileSync('artifacts/game-ticket.png', await driver.takeScreenshot(), 'base64');
     console.log('Firefox version:', (await driver.getCapabilities()).get('browserVersion'));
-    console.log('PASS: Firefox add-on install, images, restoration, exclusions, settings, popup, quiz, explanations, grade book, rare capture, collection and hide-and-seek.');
+    console.log('PASS: Firefox add-on install, images, restoration, exclusions, settings, popup, quiz, explanations, grade book, page image capture, collection, hide-and-seek, live popup mood, reactions and manual ticket with automatic events off.');
     console.log('Fixture HTTP requests:', JSON.stringify(requests));
   } finally { await driver.quit(); server.close(); }
 })().catch(error => { console.error(error); server.close(); process.exitCode = 1; });

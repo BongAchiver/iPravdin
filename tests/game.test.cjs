@@ -26,15 +26,16 @@ test('the event distribution is 55% quiz, 25% collectible, 20% observation', () 
 function fixture(initial = {}) {
   const data = structuredClone(initial);
   let listener;
+  let installed;
   let now = Date.now();
   const NativeDate = Date;
   const context = vm.createContext({ URL, console, Date: class extends NativeDate { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }, browser: {
     storage: { local: { get: async keys => structuredClone(Object.fromEntries(keys.filter(k => k in data).map(k => [k, data[k]]))), set: async values => Object.assign(data, structuredClone(values)) } },
-    runtime: { onMessage: { addListener(fn) { listener = fn; } } }
+    runtime: { onMessage: { addListener(fn) { listener = fn; } }, onInstalled: { addListener(fn) { installed = fn; } } }
   } });
   for (const file of ['settings.js', 'game.js', 'game-bg.js']) vm.runInContext(read(file), context);
   const sender = { tab: { id: 1 }, url: 'https://example.org/' };
-  return { data, G: context.PravdinGame, advance: ms => { now += ms; }, send: (action, args = {}, origin = sender) => listener({ channel: 'pravdin-game', action, ...args }, origin) };
+  return { data, G: context.PravdinGame, install: () => installed(), now: () => now, advance: ms => { now += ms; }, send: (action, args = {}, origin = sender) => listener({ channel: 'pravdin-game', action, ...args }, origin) };
 }
 test('concurrent answers award points once and cannot be submitted by another tab', async () => {
   const f = fixture(); const start = await f.send('quiz'); const e = start.state.encounter;
@@ -83,8 +84,8 @@ test('rare encounters are collected once; quiz encounters cannot be collected', 
   const r = await f.send('catch', { id: 'rare-test' }); assert.equal(r.state.collection.legend, 1); assert.equal(r.state.xp, 15);
   assert.ok((await f.send('catch', { id: 'rare-test' })).error);
 });
-test('practice renders answers, explains the result, and removes its overlay when disabled', async () => {
-  const f = fixture();
+test('manual practice renders answers and explanations even with images and automatic events disabled', async () => {
+  const f = fixture({ activate: false, gamePrefs: { enabled: false } });
   const dom = new JSDOM('<body></body>', { url: 'moz-extension://test/ipravdin/options/practice.html', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window; const listeners = [];
   const attach = w.Element.prototype.attachShadow;
@@ -98,6 +99,52 @@ test('practice renders answers, explains the result, and removes its overlay whe
     root.querySelectorAll('.answers button')[e.question.correct].click(); await settle();
     assert.match(root.textContent, /Правильный ответ/); assert.equal(f.data.gameState.solved, 1);
     f.data.gamePrefs = { enabled: false }; for (const fn of listeners) fn({ gamePrefs: { newValue: f.data.gamePrefs } }, 'local'); await settle();
-    assert.equal(w.document.getElementById('ipravdin-encounter'), null);
+    assert.ok(w.document.getElementById('ipravdin-encounter'));
   } finally { w.dispatchEvent(new w.Event('pagehide')); w.close(); }
+});
+
+test('the default cadence is exactly five minutes and upgrades shorten old scheduled waits', async () => {
+  const f = fixture(); let r = await f.send('claim'); assert.equal(r.prefs.interval, 5); assert.equal(r.state.nextAt - f.now(), 300000);
+  f.advance(299999); assert.equal((await f.send('claim')).state.encounter, null); f.advance(1); assert.ok((await f.send('claim')).state.encounter);
+  const upgrade = fixture({ gamePrefs: { enabled: false, interval: 30 }, gameState: { xp: 123, nextAt: Date.now() + 1800000 } });
+  await upgrade.install(); assert.equal(upgrade.data.gamePrefs.interval, 5); assert.equal(upgrade.data.gamePrefs.enabled, false); assert.equal(upgrade.data.gameState.xp, 123); assert.equal(upgrade.data.gameState.nextAt - upgrade.now(), 300000);
+});
+test('page-image cards respect chances, tab ownership, quota and exactly-once capture', async () => {
+  const f = fixture({ gamePrefs: { collectibleChance: 0, debug: true } });
+  assert.equal((await f.send('spawnImage')).card, null);
+  const cards = [];
+  for (let i = 0; i < 3; i++) cards.push((await f.send('spawnImage', { force: true, species: 'legend' })).card);
+  assert.equal((await f.send('spawnImage', { force: true })).card, null);
+  assert.ok((await f.send('catchImage', { id: cards[0].id }, { tab: { id: 2 }, url: 'https://example.org/' })).error);
+  const replies = await Promise.all([f.send('catchImage', { id: cards[0].id }), f.send('catchImage', { id: cards[0].id })]);
+  assert.equal(replies.filter(r => r.error).length, 1); assert.equal(f.data.gameState.collection.legend, 1); assert.equal(f.data.gameState.xp, 15);
+  assert.ok((await f.send('spawnImage', { force: true })).card);
+});
+test('zero event weights disable automatic encounters; debug seconds override minutes', async () => {
+  const f = fixture({ gamePrefs: { debug: true, debugIntervalSeconds: 7, events: { quiz: 0, watch: 0, rare: 0 } } });
+  assert.equal((await f.send('claim')).state.nextAt - f.now(), 7000); f.advance(7000); const r = await f.send('claim'); assert.equal(r.state.encounter, null); assert.equal(r.state.nextAt - f.now(), 7000);
+});
+test('a collectible replaces a site image, captures on click, and restores the original when disabled', async () => {
+  const f = fixture({ gamePrefs: { collectibleChance: 100 } });
+  const dom = new JSDOM('<a href="/next"><img src="original.jpg" title="Original" style="outline:1px solid green" width="200" height="120"></a>', { url: 'https://example.org/', runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window; let changed; let clicked = 0;
+  w.browser = { runtime: { getURL: p => `moz-extension://test/${p}`, onMessage: { addListener() {} }, sendMessage: m => f.send(m.action, m) }, storage: { local: { get: async () => f.data }, onChanged: { addListener(fn) { changed = fn; } } } };
+  w.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 200, height: 120 });
+  w.document.querySelector('a').addEventListener('click', () => { clicked++; });
+  w.eval(read('settings.js')); w.eval(read('game.js')); w.eval(read('ipravdin.js'));
+  const settle = () => new Promise(resolve => setTimeout(resolve, 70));
+  try {
+    await settle(); const img = w.document.querySelector('img'); assert.ok(img.src.includes('/collectibles/')); assert.ok(img.dataset.ipravdinCollectible);
+    img.dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true })); await settle();
+    assert.equal(clicked, 0); assert.ok(img.src.includes('/photos/')); assert.equal(img.dataset.ipravdinCollectible, undefined); assert.equal(f.data.gameState.xp, 15);
+    changed({ activate: { newValue: false } }, 'local'); await settle(); assert.equal(img.getAttribute('src'), 'original.jpg'); assert.equal(img.title, 'Original'); assert.equal(img.style.outline, '1px solid green');
+  } finally { w.dispatchEvent(new w.Event('pagehide')); w.close(); }
+});
+test('practice reports transport failure instead of leaving a blank page', async () => {
+  const dom = new JSDOM('<p id="practiceStatus"></p><button id="practiceRetry">Retry</button><div id="practiceStage"></div>', { url: 'moz-extension://test/ipravdin/options/practice.html', runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window;
+  w.browser = { runtime: { getURL: p => `moz-extension://test/${p}`, sendMessage: async () => { throw new Error('No receiver'); }, onMessage: { addListener() {} } }, storage: { local: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+  w.eval(read('settings.js')); w.eval(read('game.js')); w.eval(read('game-content.js'));
+  try { await new Promise(r => setTimeout(r, 50)); assert.match(w.document.getElementById('practiceStatus').textContent, /No receiver/); assert.ok(w.document.getElementById('ipravdin-encounter')); }
+  finally { w.dispatchEvent(new w.Event('pagehide')); w.close(); }
 });

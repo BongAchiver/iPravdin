@@ -11,6 +11,52 @@
   let failed = new WeakSet();
   let revision = 0;
   const pending = new Set();
+  const game = (action, data = {}) => browser.runtime.sendMessage({ channel: 'pravdin-game', action, ...data });
+  function clearCard(img, saved, release = true) {
+    if (!saved.card) return;
+    if (release) game('releaseImage', { id: saved.card.id }).catch(() => {});
+    saved.card = null; delete img.dataset.ipravdinCollectible;
+    for (const name of ['outline', 'outline-offset', 'cursor']) {
+      const old = saved.styles[name]; if (old.value) img.style.setProperty(name, old.value, old.priority); else img.style.removeProperty(name);
+    }
+    if (saved.title === null) img.removeAttribute('title'); else img.title = saved.title;
+    saved.photo = photos[Math.floor(Math.random() * photos.length)];
+    img.style.setProperty('object-fit', 'cover');
+  }
+  async function collectible(img, saved, data = {}) {
+    if (!running || !browser.runtime.sendMessage || !globalThis.PravdinGame) return { error: 'Подмена изображений выключена.' };
+    const reply = await game('spawnImage', data);
+    if (!reply?.card) return reply || { error: 'Не удалось связаться с расширением.' };
+    if (!running || !img.isConnected || originals.get(img) !== saved || saved.card) { await game('releaseImage', { id: reply.card.id }); return { error: 'Картинка уже изменилась.' }; }
+    const s = PravdinGame.species.find(s => s.id === reply.card.species);
+    saved.card = reply.card; saved.photo = browser.runtime.getURL(s.image);
+    img.style.setProperty('object-fit', 'contain');
+    img.dataset.ipravdinCollectible = s.id; img.title = `${s.name} · ${s.rarity}. Нажмите, чтобы собрать!`;
+    img.style.setProperty('outline', `3px solid ${s.color}`); img.style.setProperty('outline-offset', '-3px'); img.style.setProperty('cursor', 'pointer');
+    replace(img); return { ok: true };
+  }
+  globalThis.PravdinImages = {
+    async spawn(data = {}) {
+      const candidates = [...originals].filter(([img, saved]) => img.isConnected && !saved.card && img.getBoundingClientRect().width >= 96 && img.getBoundingClientRect().height >= 96);
+      if (!candidates.length) return { error: 'На странице нет подходящих картинок размером от 96 × 96. Откройте страницу с фотографиями.' };
+      const [img, saved] = candidates[Math.floor(Math.random() * candidates.length)];
+      return collectible(img, saved, data);
+    },
+    clear() { for (const [img, saved] of originals) { clearCard(img, saved); replace(img); } return { ok: true }; }
+  };
+  browser.runtime.onMessage?.addListener(message => {
+    if (message?.channel !== 'pravdin-images') return undefined;
+    return message.action === 'clear' ? Promise.resolve(PravdinImages.clear()) : PravdinImages.spawn({ force: true, species: message.species });
+  });
+  document.addEventListener('click', async event => {
+    const img = event.target; const saved = originals.get(img);
+    if (!saved?.card) return;
+    event.preventDefault(); event.stopImmediatePropagation(); if (saved.catching) return; saved.catching = true;
+    try { const r = await game('catchImage', { id: saved.card.id }); if (r.error) { img.title = r.error; return; }
+      clearCard(img, saved, false); replace(img); img.title = r.text;
+      document.dispatchEvent(new CustomEvent('pravdin-collected', { detail: r.text }));
+    } catch { img.title = 'Не удалось собрать. Нажмите ещё раз.'; } finally { saved.catching = false; }
+  }, true);
   const snapshot = node => Object.fromEntries(attributes.map(name => [name, node.getAttribute(name)]));
   function restoreAttributes(node, values) {
     for (const [name, value] of Object.entries(values)) {
@@ -20,6 +66,8 @@
   function restore(img) {
     const saved = originals.get(img);
     if (!saved) return;
+    clearCard(img, saved);
+    if (saved.title === null) img.removeAttribute('title'); else img.title = saved.title;
     restoreAttributes(img, saved.attrs);
     for (const [name, old] of Object.entries(saved.styles)) {
       if (old.value) img.style.setProperty(name, old.value, old.priority); else img.style.removeProperty(name);
@@ -33,13 +81,14 @@
     if (!rect.width || !rect.height || (settings.skipSmall && (rect.width < 48 || rect.height < 48))) return;
     let saved = originals.get(img);
     if (!saved) {
-      saved = { attrs: snapshot(img), styles: {}, photo: photos[Math.floor(Math.random() * photos.length)] };
-      for (const name of ['width', 'height', 'object-fit', 'object-position']) saved.styles[name] = { value: img.style.getPropertyValue(name), priority: img.style.getPropertyPriority(name) };
+      saved = { attrs: snapshot(img), styles: {}, title: img.getAttribute('title'), photo: photos[Math.floor(Math.random() * photos.length)] };
+      for (const name of ['width', 'height', 'object-fit', 'object-position', 'outline', 'outline-offset', 'cursor']) saved.styles[name] = { value: img.style.getPropertyValue(name), priority: img.style.getPropertyPriority(name) };
       originals.set(img, saved);
       img.style.setProperty('width', `${rect.width}px`);
       img.style.setProperty('height', `${rect.height}px`);
       img.style.setProperty('object-fit', 'cover');
       img.style.setProperty('object-position', 'center');
+      if (rect.width >= 96 && rect.height >= 96) collectible(img, saved).catch(() => {});
     }
     if (img.parentElement?.tagName === 'PICTURE') {
       for (const source of img.parentElement.querySelectorAll('source')) {
@@ -125,6 +174,7 @@
   window.addEventListener('pageshow', event => { if (event.persisted) apply(settings); });
   browser.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
+    if (changes.gamePrefs?.newValue?.enabled === false) { for (const [img, saved] of originals) { clearCard(img, saved); replace(img); } }
     if (!Object.keys(changes).some(key => key in PravdinSettings.defaults)) return;
     revision++;
     const updated = { ...settings };

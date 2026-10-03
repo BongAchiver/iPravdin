@@ -46,17 +46,38 @@ globalThis.PravdinGame = (() => {
   ];
   const empty = () => ({ mood: 60, xp: 0, solved: 0, attempted: 0, streak: 0, best: 0, pets: 0, found: 0, collection: {}, nextAt: 0, lastPet: 0, encounter: null, quest: null });
   const mood = n => n >= 80 ? 'Доволен вами' : n >= 50 ? 'Присматривается' : n >= 25 ? 'Недоволен' : 'Ждёт на пересдаче';
-  function roll(r, variant = Math.random()) {
-    const tier = r < .65 ? 0 : r < .90 ? 1 : r < .985 ? 2 : 3;
+  const bounded = (n, fallback, max = 100) => Number.isFinite(Number(n)) ? Math.max(0, Math.min(max, Number(n))) : fallback;
+  function preferences(value = {}) {
+    return { enabled: value.enabled !== false, interval: [5, 10, 30, 60].includes(value.interval) ? value.interval : 5,
+      cadenceVersion: 1, debug: value.debug === true, debugIntervalSeconds: bounded(value.debugIntervalSeconds, 10, 3600),
+      collectibleChance: bounded(value.collectibleChance, 4),
+      events: Object.fromEntries(Object.entries({ quiz: 55, rare: 25, watch: 20 }).map(([k, n]) => [k, bounded(value.events?.[k], n)])),
+      rarities: [65, 25, 8.5, 1.5].map((n, i) => bounded(value.rarities?.[i], n)) };
+  }
+  function weighted(r, weights) {
+    const total = weights.reduce((a, b) => a + b, 0); if (!total) return -1;
+    let position = r * total;
+    for (let i = 0; i < weights.length; i++) { position -= weights[i]; if (position < 0) return i; }
+    return weights.findLastIndex(n => n > 0);
+  }
+  function roll(r, variant = Math.random(), weights = [65, 25, 8.5, 1.5]) {
+    const tier = weighted(r, weights); if (tier < 0) return null;
     const pool = species.filter(s => s.tier === tier);
     return pool[Math.min(pool.length - 1, Math.floor(variant * pool.length))];
   }
-  const eventKind = r => r < .55 ? 'quiz' : r < .75 ? 'watch' : 'rare';
+  function eventKind(r, events = { quiz: 55, watch: 20, rare: 25 }) { return ['quiz', 'watch', 'rare'][weighted(r, [events.quiz, events.watch, events.rare])] || null; }
+  function visual(state = {}, now = Date.now()) {
+    const n = bounded(state.mood, 60);
+    const action = state.lastAction && now - state.lastAction.at < 6000 ? state.lastAction.kind : null;
+    return { mood: n, label: mood(n), color: n >= 80 ? '#a4d85e' : n >= 50 ? '#b0a0ff' : n >= 25 ? '#efbd69' : '#e7858e',
+      photo: action === 'tea' ? 'ipravdin/collectibles/tea.jpg' : action === 'pet' || n >= 80 ? 'ipravdin/reactions/happy.jpg' : n < 50 ? 'ipravdin/reactions/stern.jpg' : 'ipravdin/photos/portrait.jpg',
+      action, text: action ? state.lastAction.text : mood(n) };
+  }
   function shuffled(question, random = Math.random) {
     const order = question.answers.map((_, i) => i);
     for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
     return { ...question, answers: order.map(i => question.answers[i]), correct: order.indexOf(question.correct) };
   }
   const samePage = (a, b) => { try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && decodeURIComponent(x.pathname) === decodeURIComponent(y.pathname); } catch { return false; } };
-  return { questions, species, quests, empty, mood, roll, eventKind, shuffled, samePage };
+  return { questions, species, quests, empty, mood, roll, eventKind, preferences, visual, shuffled, samePage };
 })();

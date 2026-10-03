@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="ru">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>iPravdin</title><link rel="stylesheet" href="options.css"><script src="../settings.js" defer></script><script src="options.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>iPravdin</title><link rel="stylesheet" href="options.css"><script src="../settings.js" defer></script><script src="../game.js" defer></script><script src="options.js" defer></script><script src="companion.js" defer></script></head>
 <body class="popup"><main>
-  <header class="header"><span class="brand"><span class="brand-icon" aria-hidden="true">п.</span> iPravdin</span><span class="edition">Firefox</span></header>
-  <div class="popup-portrait"><img src="../photos/portrait.jpg" alt="Правдин"><span>Добавим немного<br><em>Правдина?</em></span></div>
+  <header class="header"><span class="brand"><img class="brand-icon" src="../icons/icon-48.png" alt=""> iPravdin</span><span class="edition">Firefox</span></header>
+  <div class="popup-portrait companion" data-companion><img class="companion-photo" src="../photos/portrait.jpg" alt="Правдин"><button class="companion-head" data-interact="pet" type="button" aria-label="Погладить Правдина по голове" title="Поводите курсором по голове">♡</button><span class="companion-spark" aria-hidden="true">♡ ✦ ♡</span><p class="companion-bubble" role="status">Добавим немного Правдина?</p><div class="companion-actions"><button data-interact="pet" type="button">♡ Погладить</button><button data-interact="tea" type="button">☕ Чай</button><button data-interact="talk" type="button">↔ Сказать</button></div></div>
+  <section class="mood-meter" data-mood-meter aria-label="Настроение Правдина"><div class="mood-heading"><span class="mood-label">Загружаем настроение…</span><strong class="mood-value">—/100</strong></div><div class="mood-track" role="progressbar" aria-label="Настроение Правдина" aria-valuemin="0" aria-valuemax="100" aria-valuenow="60"><div class="mood-fill"></div></div></section>
   <label class="setting"><span><strong>Режим Правдина</strong><small id="heroStatus">Загружаем…</small></span><input id="activate" class="toggle" type="checkbox" role="switch" disabled></label>
   <button id="openOptions" class="full-button" type="button">Все настройки <span aria-hidden="true">↗</span></button>
   <a class="game-link" href="practice.html" target="_blank">Внезапный опрос →</a>

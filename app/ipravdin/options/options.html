@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="ru">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>iPravdin · Настройки</title><link rel="stylesheet" href="options.css"><script src="../settings.js" defer></script><script src="../game.js" defer></script><script src="options.js" defer></script><script src="game-ui.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>iPravdin · Настройки</title><link rel="stylesheet" href="options.css"><script src="../settings.js" defer></script><script src="../game.js" defer></script><script src="options.js" defer></script><script src="game-ui.js" defer></script><script src="companion.js" defer></script><script src="debug.js" defer></script></head>
 <body>
   <main class="shell">
-    <header class="header"><a class="brand" href="options.html"><span class="brand-icon" aria-hidden="true">п.</span> iPravdin<span class="edition">для Firefox</span></a><span class="pill">Локально. Без слежки.</span></header>
+    <header class="header"><a class="brand" href="options.html"><img class="brand-icon" src="../icons/icon-48.png" alt=""> iPravdin<span class="edition">для Firefox</span></a><span class="pill">Локально. Без слежки.</span></header>
     <section class="hero">
       <div class="hero-copy"><span class="eyebrow">ИНТЕРНЕТ С ХАРАКТЕРОМ</span><h1>Всё пройдёт.<br>Правдин <em>останется.</em></h1><p>Любимые сайты, неожиданные фотографии.<br>Добавьте немного Правдина в обычный день.</p><div class="hero-meta"><span class="status-dot"></span><span id="heroStatus">Загружаем настройки…</span></div></div>
-      <div class="portrait"><img src="../photos/portrait.jpg" alt="Правдин"><span class="portrait-caption">На случай, если интернету не хватает Правдина.</span><span class="portrait-number" aria-hidden="true">01 / ПРАВДИН</span></div>
+      <div class="portrait companion" data-companion><img class="companion-photo" src="../photos/portrait.jpg" alt="Правдин"><button class="companion-head" data-interact="pet" type="button" aria-label="Погладить Правдина по голове" title="Поводите курсором по голове">♡</button><span class="companion-spark" aria-hidden="true">♡ ✦ ♡</span><p class="companion-bubble" role="status">На случай, если интернету не хватает Правдина.</p><div class="companion-actions"><button data-interact="pet" type="button">♡ Погладить</button><button data-interact="tea" type="button">☕ Чай</button><button data-interact="talk" type="button">↔ Поговорить</button></div></div>
     </section>
     <section class="dashboard" aria-label="Настройки расширения">
       <div class="card controls"><div class="section-heading"><span class="eyebrow">01 / УПРАВЛЕНИЕ</span><h2>Настроение интернета</h2></div>
@@ -21,6 +21,7 @@
       </div>
     </section>
     <section id="gamePanel" class="card game-panel" aria-label="Зачётка, коллекция и игровые события"></section>
+    <section id="debugPanel" class="card game-panel" aria-label="Режим отладки"></section>
     <footer><span>Матан. Коллекция. Правдин.</span><span>iPravdin <span class="footer-version">2.4</span></span></footer>
     <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
   </main>
